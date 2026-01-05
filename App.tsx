@@ -347,7 +347,7 @@ export default function App() {
           });
       }
 
-      setNotes(prev => prev.map(note => {
+      setNotes((prev: Note[]) => prev.map(note => {
           if (note.id !== noteId) return note;
 
           const lines = note.content.split('\n');
@@ -373,7 +373,7 @@ export default function App() {
       updatedAt: Date.now(),
       createdAt: Date.now(),
     };
-    setNotes(prev => [newNote, ...prev]);
+    setNotes((prev: Note[]) => [newNote, ...prev]);
     openNote(newNote.id);
     setMobileMenuOpen(false); // Close sidebar on mobile on create
   };
@@ -388,7 +388,7 @@ export default function App() {
         updatedAt: Date.now(),
         createdAt: Date.now(),
     };
-    setNotes(prev => [newNote, ...prev]);
+    setNotes((prev: Note[]) => [newNote, ...prev]);
     // Note: We intentionally don't open the note here to keep focus on the editor
     // unless the user specifically navigates there later.
   };
@@ -417,7 +417,7 @@ export default function App() {
             updatedAt: Date.now(),
             createdAt: Date.now(),
         };
-        setNotes(prev => [newNote, ...prev]);
+        setNotes((prev: Note[]) => [newNote, ...prev]);
         openNote(newNote.id);
     }
     setMobileMenuOpen(false);
@@ -436,7 +436,7 @@ export default function App() {
                     parentId, 
                     createdAt: Date.now() 
                 };
-                setFolders(prev => [...prev, newFolder]);
+                setFolders((prev: Folder[]) => [...prev, newFolder]);
                 // Automatically expand the new folder (or its parent)
                 if (parentId) {
                     setExpandedFolderIds((prev: string[]) => prev.includes(parentId) ? prev : [...prev, parentId]);
@@ -467,8 +467,8 @@ export default function App() {
         message: `Delete folder "${name}" and all its contents?`,
         onConfirm: () => {
             const idsToDelete = [id, ...getDescendantFolderIds(id, folders)];
-            setFolders(prev => prev.filter(f => !idsToDelete.includes(f.id)));
-            setNotes(prev => prev.filter(n => !n.folderId || !idsToDelete.includes(n.folderId)));
+            setFolders((prev: Folder[]) => prev.filter(f => !idsToDelete.includes(f.id)));
+            setNotes((prev: Note[]) => prev.filter(n => !n.folderId || !idsToDelete.includes(n.folderId)));
             
             // Cleanup expanded state
             setExpandedFolderIds((prev: string[]) => prev.filter(eid => !idsToDelete.includes(eid)));
@@ -482,7 +482,7 @@ export default function App() {
             const deletedNoteIds = allNotes
                 .filter(n => n.folderId && idsToDelete.includes(n.folderId))
                 .map(n => n.id);
-            setPanes(prev => prev.map(pid => (pid && deletedNoteIds.includes(pid)) ? null : pid));
+            setPanes((prev: (string | null)[]) => prev.map(pid => (pid && deletedNoteIds.includes(pid)) ? null : pid));
             
             setConfirmModal((prev: ConfirmModalState) => ({ ...prev, isOpen: false }));
         }
@@ -494,15 +494,15 @@ export default function App() {
         isOpen: true,
         message: 'Are you sure you want to delete this note?',
         onConfirm: () => {
-            setNotes(prev => prev.filter((n) => n.id !== id));
-            setPanes(prev => prev.map(paneId => paneId === id ? null : paneId));
+            setNotes((prev: Note[]) => prev.filter((n) => n.id !== id));
+            setPanes((prev: (string | null)[]) => prev.map(paneId => paneId === id ? null : paneId));
             setConfirmModal((prev: ConfirmModalState) => ({ ...prev, isOpen: false }));
         }
     });
   };
 
   const handleToggleBookmark = (id: string) => {
-    setNotes(prev => {
+    setNotes((prev: Note[]) => {
         const note = prev.find(n => n.id === id);
         if (!note) return prev;
         if (note.isBookmarked) {
@@ -517,7 +517,7 @@ export default function App() {
   };
 
   const handleReorderBookmark = (draggedId: string, targetId: string) => {
-    setNotes(prev => {
+    setNotes((prev: Note[]) => {
         // Get all bookmarked notes sorted by current order
         const bookmarked = prev.filter(n => n.isBookmarked).sort((a, b) => (a.bookmarkOrder || 0) - (b.bookmarkOrder || 0));
         const draggedIndex = bookmarked.findIndex(n => n.id === draggedId);
@@ -546,7 +546,7 @@ export default function App() {
   };
 
   const handleUpdateNote = (id: string, updates: Partial<Note>) => {
-    setNotes(prev => prev.map((n) => (n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n)));
+    setNotes((prev: Note[]) => prev.map((n) => (n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n)));
   };
 
   const handleRefactorLinks = (oldTitle: string, newTitle: string) => {
@@ -554,7 +554,7 @@ export default function App() {
     const escapedOldTitle = oldTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`\\[\\[${escapedOldTitle}\\]\\]`, 'g');
     
-    setNotes(prev => prev.map(note => {
+    setNotes((prev: Note[]) => prev.map(note => {
       // Only update if it contains the link
       if (note.content.match(regex)) {
         return {
@@ -568,7 +568,7 @@ export default function App() {
   };
 
   const handleMoveNote = (noteId: string, folderId: string | null) => {
-    setNotes(prev => prev.map(n => n.id === noteId ? { ...n, folderId, updatedAt: Date.now() } : n));
+    setNotes((prev: Note[]) => prev.map(n => n.id === noteId ? { ...n, folderId, updatedAt: Date.now() } : n));
   };
 
   const handleMoveFolder = (folderId: string, newParentId: string | null) => {
@@ -580,7 +580,7 @@ export default function App() {
               return;
           }
       }
-      setFolders(folders.map(f => f.id === folderId ? { ...f, parentId: newParentId } : f));
+      setFolders((prev: Folder[]) => prev.map(f => f.id === folderId ? { ...f, parentId: newParentId } : f));
   };
 
   const handleSortChange = (field: SortField) => {
@@ -605,7 +605,7 @@ export default function App() {
     const newPanes = [...panes];
     newPanes[targetPane] = id;
     setPanes(newPanes);
-    setHistory(prevHistory => {
+    setHistory((prevHistory: PaneHistory[]) => {
         const newHistory = [...prevHistory];
         const paneHist = newHistory[targetPane] || { stack: [], currentIndex: -1 };
         const newStack = paneHist.stack.slice(0, paneHist.currentIndex + 1);
@@ -631,7 +631,7 @@ export default function App() {
           const newPanes = [...panes];
           newPanes[activePaneIndex] = noteId;
           setPanes(newPanes);
-          setHistory(prev => {
+          setHistory((prev: PaneHistory[]) => {
               const newH = [...prev];
               newH[activePaneIndex] = { ...hist, currentIndex: newIndex };
               return newH;
@@ -647,7 +647,7 @@ export default function App() {
           const newPanes = [...panes];
           newPanes[activePaneIndex] = noteId;
           setPanes(newPanes);
-          setHistory(prev => {
+          setHistory((prev: PaneHistory[]) => {
               const newH = [...prev];
               newH[activePaneIndex] = { ...hist, currentIndex: newIndex };
               return newH;
@@ -673,7 +673,7 @@ export default function App() {
                 updatedAt: Date.now(),
                 createdAt: Date.now(),
             };
-            setNotes(prev => [newNote, ...prev]);
+            setNotes((prev: Note[]) => [newNote, ...prev]);
             openNote(newNote.id);
             setConfirmModal((prev: ConfirmModalState) => ({ ...prev, isOpen: false }));
           }
@@ -688,7 +688,7 @@ export default function App() {
       setSplitRatio(0.5);
     } else {
       setPanes([panes[0], panes[0]]); 
-      setHistory(prev => {
+      setHistory((prev: PaneHistory[]) => {
           const newH = [...prev];
           if (panes[0]) {
             newH[1] = { stack: [panes[0]], currentIndex: 0 };
@@ -1294,7 +1294,7 @@ export default function App() {
       {/* Confirm Modal */}
       {confirmModal.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}></div>
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setConfirmModal((prev: ConfirmModalState) => ({ ...prev, isOpen: false }))}></div>
             <div className="relative bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl p-6 max-w-sm w-full">
                 <h3 className="text-lg font-bold mb-2 text-slate-900 dark:text-slate-100">Confirm Action</h3>
                 <p className="text-slate-600 dark:text-slate-300 mb-6">{confirmModal.message}</p>
