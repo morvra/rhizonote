@@ -10,6 +10,24 @@
         darkMode: 'class',
       }
     </script>
+    <script>
+      // Apply theme immediately to prevent flashing
+      (function() {
+        try {
+          const savedTheme = localStorage.getItem('rhizonote_theme');
+          // Default to 'dark' if no setting exists, matching App.tsx logic
+          const theme = savedTheme || 'dark';
+          
+          if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (e) {
+          console.error('Error applying theme:', e);
+        }
+      })();
+    </script>
     <style>
       /* Custom Scrollbar for a cleaner look */
       ::-webkit-scrollbar {
@@ -44,7 +62,7 @@
 }
 </script>
 </head>
-  <body class="overflow-hidden">
+  <body class="overflow-hidden bg-white dark:bg-slate-950 transition-colors duration-200">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
