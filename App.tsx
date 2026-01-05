@@ -1122,7 +1122,7 @@ export default function App() {
                                     {note.title}
                                  </div>
                                  <div className="pl-4 space-y-1">
-                                     {tasks.map((task, i) => {
+                                     {tasks.map((task) => {
                                          // Show all, but styling differs for completed
                                          return (
                                              <div key={`${note.id}-${task.lineIndex}`} className={`flex items-start gap-3 group ${task.isChecked ? 'opacity-40 hover:opacity-100 transition-opacity' : ''}`}>
