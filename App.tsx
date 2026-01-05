@@ -77,6 +77,19 @@ interface NoteTasks {
     tasks: ExtractedTask[];
 }
 
+interface ConfirmModalState {
+    isOpen: boolean;
+    message: string;
+    onConfirm: () => void;
+}
+  
+interface InputModalState {
+    isOpen: boolean;
+    title: string;
+    value: string;
+    onConfirm: (val: string) => void;
+}
+
 export default function App() {
   // Initialize State from LocalStorage or Defaults
   const [notes, setNotes] = useState<Note[]>(() => {
@@ -125,18 +138,8 @@ export default function App() {
   const [dailyNoteTemplate, setDailyNoteTemplate] = useState(dailyPrefs.template || '# {{title}}\n\n<< [[{{date-1d:YYYY-MM-DD}}]] | [[{{date+1d:YYYY-MM-DD}}]] >>\n\n## Tasks\n- [ ] ');
 
   // Modal States
-  const [confirmModal, setConfirmModal] = useState<{
-    isOpen: boolean;
-    message: string;
-    onConfirm: () => void;
-  }>({ isOpen: false, message: '', onConfirm: () => {} });
-
-  const [inputModal, setInputModal] = useState<{
-    isOpen: boolean;
-    title: string;
-    value: string;
-    onConfirm: (val: string) => void;
-  }>({ isOpen: false, title: '', value: '', onConfirm: () => {} });
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({ isOpen: false, message: '', onConfirm: () => {} });
+  const [inputModal, setInputModal] = useState<InputModalState>({ isOpen: false, title: '', value: '', onConfirm: () => {} });
 
   // Sort State
   const [sortField, setSortField] = useState<SortField>(() => {
@@ -436,12 +439,12 @@ export default function App() {
                 setFolders(prev => [...prev, newFolder]);
                 // Automatically expand the new folder (or its parent)
                 if (parentId) {
-                    setExpandedFolderIds(prev => prev.includes(parentId) ? prev : [...prev, parentId]);
+                    setExpandedFolderIds((prev: string[]) => prev.includes(parentId) ? prev : [...prev, parentId]);
                 }
                 // Expand the new folder itself so user can drop things into it
-                setExpandedFolderIds(prev => [...prev, newFolder.id]);
+                setExpandedFolderIds((prev: string[]) => [...prev, newFolder.id]);
             }
-            setInputModal(prev => ({ ...prev, isOpen: false }));
+            setInputModal((prev: InputModalState) => ({ ...prev, isOpen: false }));
         }
     });
   };
@@ -468,7 +471,7 @@ export default function App() {
             setNotes(prev => prev.filter(n => !n.folderId || !idsToDelete.includes(n.folderId)));
             
             // Cleanup expanded state
-            setExpandedFolderIds(prev => prev.filter(eid => !idsToDelete.includes(eid)));
+            setExpandedFolderIds((prev: string[]) => prev.filter(eid => !idsToDelete.includes(eid)));
 
             // Check if deleted folder was the daily note folder
             if (dailyNoteFolderId === id) {
@@ -481,7 +484,7 @@ export default function App() {
                 .map(n => n.id);
             setPanes(prev => prev.map(pid => (pid && deletedNoteIds.includes(pid)) ? null : pid));
             
-            setConfirmModal(prev => ({ ...prev, isOpen: false }));
+            setConfirmModal((prev: ConfirmModalState) => ({ ...prev, isOpen: false }));
         }
     });
   };
@@ -493,7 +496,7 @@ export default function App() {
         onConfirm: () => {
             setNotes(prev => prev.filter((n) => n.id !== id));
             setPanes(prev => prev.map(paneId => paneId === id ? null : paneId));
-            setConfirmModal(prev => ({ ...prev, isOpen: false }));
+            setConfirmModal((prev: ConfirmModalState) => ({ ...prev, isOpen: false }));
         }
     });
   };
@@ -582,7 +585,7 @@ export default function App() {
 
   const handleSortChange = (field: SortField) => {
       if (sortField === field) {
-          setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+          setSortDirection((prev: SortDirection) => prev === 'asc' ? 'desc' : 'asc');
       } else {
           setSortField(field);
           setSortDirection(field === 'name' ? 'asc' : 'desc');
@@ -590,7 +593,7 @@ export default function App() {
   };
 
   const handleToggleFolderExpand = (folderId: string) => {
-      setExpandedFolderIds(prev => 
+      setExpandedFolderIds((prev: string[]) => 
         prev.includes(folderId) 
             ? prev.filter(id => id !== folderId) 
             : [...prev, folderId]
@@ -672,7 +675,7 @@ export default function App() {
             };
             setNotes(prev => [newNote, ...prev]);
             openNote(newNote.id);
-            setConfirmModal(prev => ({ ...prev, isOpen: false }));
+            setConfirmModal((prev: ConfirmModalState) => ({ ...prev, isOpen: false }));
           }
       });
     }
@@ -1297,7 +1300,7 @@ export default function App() {
                 <p className="text-slate-600 dark:text-slate-300 mb-6">{confirmModal.message}</p>
                 <div className="flex justify-end gap-2">
                     <button 
-                        onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                        onClick={() => setConfirmModal((prev: ConfirmModalState) => ({ ...prev, isOpen: false }))}
                         className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 rounded transition-colors"
                     >
                         Cancel
@@ -1316,7 +1319,7 @@ export default function App() {
       {/* Input Modal */}
       {inputModal.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setInputModal(prev => ({ ...prev, isOpen: false }))}></div>
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setInputModal((prev: InputModalState) => ({ ...prev, isOpen: false }))}></div>
             <div className="relative bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl p-6 max-w-sm w-full">
                 <h3 className="text-lg font-bold mb-4 text-slate-900 dark:text-slate-100">{inputModal.title}</h3>
                 <input
@@ -1324,15 +1327,15 @@ export default function App() {
                     type="text"
                     className="w-full bg-gray-100 dark:bg-slate-950 border border-gray-300 dark:border-slate-800 rounded p-2 mb-6 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-indigo-500"
                     value={inputModal.value}
-                    onChange={(e) => setInputModal(prev => ({ ...prev, value: e.target.value }))}
+                    onChange={(e) => setInputModal((prev: InputModalState) => ({ ...prev, value: e.target.value }))}
                     onKeyDown={(e) => {
                         if (e.key === 'Enter') inputModal.onConfirm(inputModal.value);
-                        if (e.key === 'Escape') setInputModal(prev => ({ ...prev, isOpen: false }));
+                        if (e.key === 'Escape') setInputModal((prev: InputModalState) => ({ ...prev, isOpen: false }));
                     }}
                 />
                 <div className="flex justify-end gap-2">
                     <button 
-                        onClick={() => setInputModal(prev => ({ ...prev, isOpen: false }))}
+                        onClick={() => setInputModal((prev: InputModalState) => ({ ...prev, isOpen: false }))}
                         className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 rounded transition-colors"
                     >
                         Cancel
