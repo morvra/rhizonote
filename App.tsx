@@ -340,7 +340,7 @@ export default function App() {
   const handleToggleTaskFromModal = (noteId: string, lineIndex: number, currentChecked: boolean) => {
       // If currently unchecked (false), we are checking it. Add to "recently completed" so it stays visible.
       if (!currentChecked) {
-          setRecentlyCompletedTasks(prev => {
+          setRecentlyCompletedTasks((prev: Set<string>) => {
               const newSet = new Set(prev);
               newSet.add(`${noteId}-${lineIndex}`);
               return newSet;
@@ -444,7 +444,7 @@ export default function App() {
                 // Expand the new folder itself so user can drop things into it
                 setExpandedFolderIds((prev: string[]) => [...prev, newFolder.id]);
             }
-            setInputModal((prev: InputModalState) => ({ ...prev, isOpen: false }));
+            setInputModal({ isOpen: false, title: '', value: '', onConfirm: () => {} });
         }
     });
   };
@@ -484,7 +484,7 @@ export default function App() {
                 .map(n => n.id);
             setPanes((prev: (string | null)[]) => prev.map(pid => (pid && deletedNoteIds.includes(pid)) ? null : pid));
             
-            setConfirmModal((prev: ConfirmModalState) => ({ ...prev, isOpen: false }));
+            setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} });
         }
     });
   };
@@ -496,7 +496,7 @@ export default function App() {
         onConfirm: () => {
             setNotes((prev: Note[]) => prev.filter((n) => n.id !== id));
             setPanes((prev: (string | null)[]) => prev.map(paneId => paneId === id ? null : paneId));
-            setConfirmModal((prev: ConfirmModalState) => ({ ...prev, isOpen: false }));
+            setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} });
         }
     });
   };
@@ -675,7 +675,7 @@ export default function App() {
             };
             setNotes((prev: Note[]) => [newNote, ...prev]);
             openNote(newNote.id);
-            setConfirmModal((prev: ConfirmModalState) => ({ ...prev, isOpen: false }));
+            setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} });
           }
       });
     }
@@ -777,19 +777,19 @@ export default function App() {
         // Toggle Sidebar: Mod + \
         if (isMod && e.key === '\\') {
             e.preventDefault();
-            setSidebarVisible(prev => !prev);
+            setSidebarVisible((prev: boolean) => !prev);
         }
 
         // Show Shortcuts: Mod + ? (or /)
         if (isMod && (e.key === '?' || e.key === '/')) {
             e.preventDefault();
-            setShowShortcuts(prev => !prev);
+            setShowShortcuts((prev: boolean) => !prev);
         }
 
         // Show Tasks: Alt + T (Option + T)
         if (e.altKey && e.key.toLowerCase() === 't') {
             e.preventDefault();
-            setShowTasks(prev => {
+            setShowTasks((prev: boolean) => {
                 if (prev) {
                     return false;
                 }
@@ -1294,13 +1294,13 @@ export default function App() {
       {/* Confirm Modal */}
       {confirmModal.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setConfirmModal((prev: ConfirmModalState) => ({ ...prev, isOpen: false }))}></div>
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} })}></div>
             <div className="relative bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl p-6 max-w-sm w-full">
                 <h3 className="text-lg font-bold mb-2 text-slate-900 dark:text-slate-100">Confirm Action</h3>
                 <p className="text-slate-600 dark:text-slate-300 mb-6">{confirmModal.message}</p>
                 <div className="flex justify-end gap-2">
                     <button 
-                        onClick={() => setConfirmModal((prev: ConfirmModalState) => ({ ...prev, isOpen: false }))}
+                        onClick={() => setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} })}
                         className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 rounded transition-colors"
                     >
                         Cancel
@@ -1319,7 +1319,7 @@ export default function App() {
       {/* Input Modal */}
       {inputModal.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setInputModal((prev: InputModalState) => ({ ...prev, isOpen: false }))}></div>
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setInputModal({ isOpen: false, title: '', value: '', onConfirm: () => {} })}></div>
             <div className="relative bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl p-6 max-w-sm w-full">
                 <h3 className="text-lg font-bold mb-4 text-slate-900 dark:text-slate-100">{inputModal.title}</h3>
                 <input
@@ -1330,12 +1330,12 @@ export default function App() {
                     onChange={(e) => setInputModal((prev: InputModalState) => ({ ...prev, value: e.target.value }))}
                     onKeyDown={(e) => {
                         if (e.key === 'Enter') inputModal.onConfirm(inputModal.value);
-                        if (e.key === 'Escape') setInputModal((prev: InputModalState) => ({ ...prev, isOpen: false }));
+                        if (e.key === 'Escape') setInputModal({ isOpen: false, title: '', value: '', onConfirm: () => {} });
                     }}
                 />
                 <div className="flex justify-end gap-2">
                     <button 
-                        onClick={() => setInputModal((prev: InputModalState) => ({ ...prev, isOpen: false }))}
+                        onClick={() => setInputModal({ isOpen: false, title: '', value: '', onConfirm: () => {} })}
                         className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 rounded transition-colors"
                     >
                         Cancel

@@ -26,10 +26,10 @@ const WikiLinkPopup: React.FC<WikiLinkPopupProps> = ({ query, notes, onSelect, p
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setSelectedIndex((prev) => (prev + 1) % filteredNotes.length);
+        setSelectedIndex((prev: number) => (prev + 1) % filteredNotes.length);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setSelectedIndex((prev) => (prev - 1 + filteredNotes.length) % filteredNotes.length);
+        setSelectedIndex((prev: number) => (prev - 1 + filteredNotes.length) % filteredNotes.length);
       } else if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
         onSelect(filteredNotes[selectedIndex].title);
