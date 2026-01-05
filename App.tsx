@@ -3,7 +3,7 @@ import Sidebar from './components/Sidebar';
 import Editor from './components/Editor';
 import { Note, Folder, SortField, SortDirection, Theme } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS } from './constants';
-import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, Upload, Download, FileText } from 'lucide-react';
+import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, Upload, Download, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown } from 'lucide-react';
 import { getDropboxAuthUrl, parseAuthTokenFromUrl, uploadDataToDropbox, downloadDataFromDropbox } from './utils/dropboxService';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -17,6 +17,8 @@ const LS_KEY_PANES = 'rhizonote_panes';
 const LS_KEY_ACTIVE_PANE = 'rhizonote_active_pane';
 const LS_KEY_SORT = 'rhizonote_sort';
 const LS_KEY_EXPANDED = 'rhizonote_expanded';
+const LS_KEY_UI_SETTINGS = 'rhizonote_ui_settings';
+const LS_KEY_DAILY_PREFS = 'rhizonote_daily_prefs';
 
 // Simple date formatter
 const formatDate = (date: Date, format: string) => {
@@ -90,10 +92,18 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(() => {
       return (localStorage.getItem(LS_KEY_THEME) as Theme) || 'dark';
   });
-  const [fontSize, setFontSize] = useState<number>(16);
+
+  // Load UI Settings (Size, Width, Visibility)
+  const uiSettings = useMemo(() => {
+      try {
+          return JSON.parse(localStorage.getItem(LS_KEY_UI_SETTINGS) || '{}');
+      } catch { return {}; }
+  }, []);
+
+  const [fontSize, setFontSize] = useState<number>(uiSettings.fontSize || 16);
   const [showSettings, setShowSettings] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [showTasks, setShowTasks] = useState(false);
+  const [showTasks, setShowTasks] = useState(uiSettings.showTasks || false);
 
   // Dropbox State
   const [dropboxToken, setDropboxToken] = useState<string | null>(() => localStorage.getItem(LS_KEY_DB_TOKEN));
@@ -104,9 +114,15 @@ export default function App() {
   const [recentlyCompletedTasks, setRecentlyCompletedTasks] = useState<Set<string>>(new Set());
 
   // Daily Note Settings
-  const [dailyNoteFormat, setDailyNoteFormat] = useState('YYYY-MM-DD');
-  const [dailyNoteFolderId, setDailyNoteFolderId] = useState<string>(''); // Empty string means root
-  const [dailyNoteTemplate, setDailyNoteTemplate] = useState('# {{title}}\n\n<< [[{{date-1d:YYYY-MM-DD}}]] | [[{{date+1d:YYYY-MM-DD}}]] >>\n\n## Tasks\n- [ ] ');
+  const dailyPrefs = useMemo(() => {
+      try {
+          return JSON.parse(localStorage.getItem(LS_KEY_DAILY_PREFS) || '{}');
+      } catch { return {}; }
+  }, []);
+
+  const [dailyNoteFormat, setDailyNoteFormat] = useState(dailyPrefs.format || 'YYYY-MM-DD');
+  const [dailyNoteFolderId, setDailyNoteFolderId] = useState<string>(dailyPrefs.folderId || ''); // Empty string means root
+  const [dailyNoteTemplate, setDailyNoteTemplate] = useState(dailyPrefs.template || '# {{title}}\n\n<< [[{{date-1d:YYYY-MM-DD}}]] | [[{{date+1d:YYYY-MM-DD}}]] >>\n\n## Tasks\n- [ ] ');
 
   // Modal States
   const [confirmModal, setConfirmModal] = useState<{
@@ -141,8 +157,8 @@ export default function App() {
   });
   
   // Layout State
-  const [sidebarWidth, setSidebarWidth] = useState(256); // Default 256px
-  const [splitRatio, setSplitRatio] = useState(0.5); // Default 50% for split view
+  const [sidebarWidth, setSidebarWidth] = useState(uiSettings.sidebarWidth || 256); // Default 256px
+  const [splitRatio, setSplitRatio] = useState(uiSettings.splitRatio || 0.5); // Default 50% for split view
   const isResizingSidebar = useRef(false);
   const isResizingSplit = useRef(false);
 
@@ -163,7 +179,7 @@ export default function App() {
   
   // Sidebar Visibility States
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [sidebarVisible, setSidebarVisible] = useState(true);
+  const [sidebarVisible, setSidebarVisible] = useState(uiSettings.sidebarVisible ?? true);
 
   const activeNoteId = panes[activePaneIndex];
 
@@ -203,6 +219,28 @@ export default function App() {
   useEffect(() => {
       localStorage.setItem(LS_KEY_EXPANDED, JSON.stringify(expandedFolderIds));
   }, [expandedFolderIds]);
+
+  // Persist UI Settings
+  useEffect(() => {
+      const settings = {
+          fontSize,
+          sidebarWidth,
+          splitRatio,
+          sidebarVisible,
+          showTasks
+      };
+      localStorage.setItem(LS_KEY_UI_SETTINGS, JSON.stringify(settings));
+  }, [fontSize, sidebarWidth, splitRatio, sidebarVisible, showTasks]);
+
+  // Persist Daily Note Preferences
+  useEffect(() => {
+      const prefs = {
+          format: dailyNoteFormat,
+          folderId: dailyNoteFolderId,
+          template: dailyNoteTemplate
+      };
+      localStorage.setItem(LS_KEY_DAILY_PREFS, JSON.stringify(prefs));
+  }, [dailyNoteFormat, dailyNoteFolderId, dailyNoteTemplate]);
 
   // Dropbox Auth Check
   useEffect(() => {
@@ -768,6 +806,26 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Sort Button Logic for Settings
+  const getSortIcon = (field: SortField) => {
+      if (sortField !== field) return null;
+      return sortDirection === 'asc' ? <ArrowUp size={12} className="ml-1" /> : <ArrowDown size={12} className="ml-1" />;
+  };
+
+  const SortButton = ({ field, icon: Icon, label }: { field: SortField, icon: any, label: string }) => (
+     <button
+        onClick={() => handleSortChange(field)}
+        className={`flex-1 flex items-center justify-center py-2 rounded-md text-sm font-medium transition-colors ${sortField === field ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 shadow-sm border border-indigo-200 dark:border-indigo-800' : 'bg-gray-100 dark:bg-slate-950 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
+        title={`Sort by ${label}`}
+     >
+        <div className="flex items-center">
+            <Icon size={16} className="mr-2"/>
+            {label}
+            {sortField === field && getSortIcon(field)}
+        </div>
+     </button>
+  );
+
   return (
     <div 
         className={`flex h-screen w-screen overflow-hidden font-sans bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 transition-colors duration-200`}
@@ -793,7 +851,6 @@ export default function App() {
         onMoveFolder={handleMoveFolder}
         sortField={sortField}
         sortDirection={sortDirection}
-        onSortChange={handleSortChange}
         width={sidebarWidth}
         onOpenSettings={() => setShowSettings(true)}
         expandedFolderIds={expandedFolderIds}
@@ -957,57 +1014,16 @@ export default function App() {
                     </button>
                 </div>
 
-                {/* Sync Settings */}
+                {/* Note Sorting */}
                 <div className="space-y-3">
                     <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-slate-300">
-                        <Cloud size={16} />
-                        <span>Dropbox Sync</span>
+                        <ArrowDownAz size={16} />
+                        <span>Note Sorting</span>
                     </div>
-                    <div className="bg-gray-100 dark:bg-slate-950 p-3 rounded-lg space-y-3">
-                        {!dropboxToken ? (
-                            <button
-                                onClick={handleConnectDropbox}
-                                className="w-full py-2 bg-[#0061FE] hover:bg-[#0057e5] text-white rounded-md font-medium text-sm flex items-center justify-center gap-2 transition-colors"
-                            >
-                                <Cloud size={16} /> Connect Dropbox
-                            </button>
-                        ) : (
-                            <>
-                                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                                    <span className="text-green-600 dark:text-green-400 font-medium">Connected</span>
-                                    <button onClick={handleDisconnectDropbox} className="hover:text-red-500 transition-colors flex items-center gap-1">
-                                        <LogOut size={12} /> Disconnect
-                                    </button>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button 
-                                        onClick={handleSyncPush}
-                                        disabled={syncStatus === 'syncing'}
-                                        className="flex items-center justify-center gap-2 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 rounded-md text-xs font-medium transition-colors"
-                                        title="Overwrite Dropbox data with local data"
-                                    >
-                                        <Upload size={14} /> Push (Upload)
-                                    </button>
-                                    <button 
-                                        onClick={handleSyncPull}
-                                        disabled={syncStatus === 'syncing'}
-                                        className="flex items-center justify-center gap-2 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 rounded-md text-xs font-medium transition-colors"
-                                        title="Overwrite local data with Dropbox data"
-                                    >
-                                        <Download size={14} /> Pull (Download)
-                                    </button>
-                                </div>
-                                {syncMessage && (
-                                    <div className={`text-xs text-center ${syncStatus === 'error' ? 'text-red-500' : 'text-slate-500'}`}>
-                                        {syncStatus === 'syncing' ? (
-                                            <span className="flex items-center justify-center gap-1">
-                                                <RefreshCw size={12} className="animate-spin" /> Syncing...
-                                            </span>
-                                        ) : syncMessage}
-                                    </div>
-                                )}
-                            </>
-                        )}
+                    <div className="grid grid-cols-3 gap-2">
+                        <SortButton field="updated" icon={Clock} label="Updated" />
+                        <SortButton field="created" icon={Calendar} label="Created" />
+                        <SortButton field="name" icon={ArrowDownAz} label="Name" />
                     </div>
                 </div>
 
@@ -1107,6 +1123,60 @@ export default function App() {
                             placeholder="# {{title}}"
                         />
                         <p className="text-[10px] text-slate-500">Use {'{{title}}'} for the date title. Use {'{{date+1d:YYYY-MM-DD}}'} for relative dates.</p>
+                    </div>
+                </div>
+
+                {/* Sync Settings */}
+                <div className="space-y-3 pt-4 border-t border-gray-200 dark:border-slate-800">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-slate-300">
+                        <Cloud size={16} />
+                        <span>Dropbox Sync</span>
+                    </div>
+                    <div className="bg-gray-100 dark:bg-slate-950 p-3 rounded-lg space-y-3">
+                        {!dropboxToken ? (
+                            <button
+                                onClick={handleConnectDropbox}
+                                className="w-full py-2 bg-[#0061FE] hover:bg-[#0057e5] text-white rounded-md font-medium text-sm flex items-center justify-center gap-2 transition-colors"
+                            >
+                                <Cloud size={16} /> Connect Dropbox
+                            </button>
+                        ) : (
+                            <>
+                                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                                    <span className="text-green-600 dark:text-green-400 font-medium">Connected</span>
+                                    <button onClick={handleDisconnectDropbox} className="hover:text-red-500 transition-colors flex items-center gap-1">
+                                        <LogOut size={12} /> Disconnect
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button 
+                                        onClick={handleSyncPush}
+                                        disabled={syncStatus === 'syncing'}
+                                        className="flex items-center justify-center gap-2 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 rounded-md text-xs font-medium transition-colors"
+                                        title="Overwrite Dropbox data with local data"
+                                    >
+                                        <Upload size={14} /> Push (Upload)
+                                    </button>
+                                    <button 
+                                        onClick={handleSyncPull}
+                                        disabled={syncStatus === 'syncing'}
+                                        className="flex items-center justify-center gap-2 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 rounded-md text-xs font-medium transition-colors"
+                                        title="Overwrite local data with Dropbox data"
+                                    >
+                                        <Download size={14} /> Pull (Download)
+                                    </button>
+                                </div>
+                                {syncMessage && (
+                                    <div className={`text-xs text-center ${syncStatus === 'error' ? 'text-red-500' : 'text-slate-500'}`}>
+                                        {syncStatus === 'syncing' ? (
+                                            <span className="flex items-center justify-center gap-1">
+                                                <RefreshCw size={12} className="animate-spin" /> Syncing...
+                                            </span>
+                                        ) : syncMessage}
+                                    </div>
+                                )}
+                            </>
+                        )}
                     </div>
                 </div>
             </div>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Note, Folder, SortField, SortDirection } from '../types';
-import { FileText, Bookmark, Plus, Search, Trash2, Folder as FolderIcon, FolderOpen, ChevronRight, ChevronDown, Clock, Calendar, ArrowDownAz, ArrowUp, ArrowDown, Settings } from 'lucide-react';
+import { FileText, Bookmark, Plus, Search, Trash2, Folder as FolderIcon, FolderOpen, ChevronRight, ChevronDown, Settings } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -20,7 +20,6 @@ interface SidebarProps {
   onMoveFolder: (folderId: string, parentId: string | null) => void;
   sortField: SortField;
   sortDirection: SortDirection;
-  onSortChange: (field: SortField) => void;
   width?: number;
   onOpenSettings: () => void;
   expandedFolderIds: string[];
@@ -179,8 +178,7 @@ const FolderItem: React.FC<{
     
     if (noteId) {
       onMoveNote(noteId, folder.id);
-      // Auto-expand if dropping a note so user sees it
-      if (!isExpanded) onToggleExpand(folder.id);
+      // Removed auto-expansion when dropping a note
     } else if (folderId && folderId !== folder.id) {
         onMoveFolder(folderId, folder.id);
         // Do NOT force expand when moving a folder, preserving user state
@@ -329,7 +327,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   onMoveFolder,
   sortField,
   sortDirection,
-  onSortChange,
   width,
   onOpenSettings,
   expandedFolderIds,
@@ -367,22 +364,6 @@ const Sidebar: React.FC<SidebarProps> = ({
        onMoveFolder(folderId, null);
     }
   };
-
-  const getSortIcon = (field: SortField) => {
-      if (sortField !== field) return null;
-      return sortDirection === 'asc' ? <ArrowUp size={12} className="ml-1" /> : <ArrowDown size={12} className="ml-1" />;
-  };
-
-  const SortButton = ({ field, icon: Icon, label }: { field: SortField, icon: any, label: string }) => (
-     <button
-        onClick={() => onSortChange(field)}
-        className={`flex-1 flex items-center justify-center py-1 rounded text-xs transition-colors ${sortField === field ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 font-medium shadow-sm border border-gray-200 dark:border-slate-700' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
-        title={`Sort by ${label}`}
-     >
-        <Icon size={14} />
-        {sortField === field && getSortIcon(field)}
-     </button>
-  );
 
   return (
     <>
@@ -431,7 +412,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </button>
                 </div>
             </div>
-            <div className="relative mb-3">
+            <div className="relative">
                 <Search size={14} className="absolute left-3 top-2.5 text-slate-500 dark:text-slate-500" />
                 <input
                 type="text"
@@ -440,13 +421,6 @@ const Sidebar: React.FC<SidebarProps> = ({
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 text-sm rounded pl-9 pr-3 py-2 border border-gray-300 dark:border-slate-800 focus:border-indigo-500 focus:outline-none placeholder-slate-400 dark:placeholder-slate-600"
                 />
-            </div>
-
-            {/* Sort Controls */}
-            <div className="flex items-center justify-between bg-gray-200 dark:bg-slate-950 rounded p-1 border border-gray-300 dark:border-slate-800 gap-1">
-                <SortButton field="updated" icon={Clock} label="Updated" />
-                <SortButton field="created" icon={Calendar} label="Created" />
-                <SortButton field="name" icon={ArrowDownAz} label="Name" />
             </div>
             </div>
 
