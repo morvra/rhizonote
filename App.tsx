@@ -96,6 +96,9 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [syncMessage, setSyncMessage] = useState('');
 
+  // Track tasks completed *during* the current modal session so they don't disappear immediately
+  const [recentlyCompletedTasks, setRecentlyCompletedTasks] = useState<Set<string>>(new Set());
+
   // Daily Note Settings
   const [dailyNoteFormat, setDailyNoteFormat] = useState('YYYY-MM-DD');
   const [dailyNoteFolderId, setDailyNoteFolderId] = useState<string>(''); // Empty string means root
@@ -247,9 +250,19 @@ export default function App() {
 
   const handleCloseTasks = () => {
       setShowTasks(false);
+      setRecentlyCompletedTasks(new Set());
   };
 
   const handleToggleTaskFromModal = (noteId: string, lineIndex: number, currentChecked: boolean) => {
+      // If currently unchecked (false), we are checking it. Add to "recently completed" so it stays visible.
+      if (!currentChecked) {
+          setRecentlyCompletedTasks(prev => {
+              const newSet = new Set(prev);
+              newSet.add(`${noteId}-${lineIndex}`);
+              return newSet;
+          });
+      }
+
       setNotes(prev => prev.map(note => {
           if (note.id !== noteId) return note;
 
@@ -1081,13 +1094,22 @@ export default function App() {
                      </button>
                  </div>
                  <div className="flex-1 overflow-y-auto p-4 space-y-6">
-                     {allTasks.length === 0 ? (
-                         <div className="text-center text-slate-500 dark:text-slate-500 py-8">
-                             No tasks found in your notes.
-                             <br/><span className="text-xs">Create a task using <code>- [ ]</code> in any note.</span>
-                         </div>
-                     ) : (
-                         allTasks.map(({ note, tasks }) => (
+                     {(() => {
+                         const visibleNoteTasks = allTasks.map(nt => ({
+                             note: nt.note,
+                             tasks: nt.tasks.filter(t => !t.isChecked || recentlyCompletedTasks.has(`${nt.note.id}-${t.lineIndex}`))
+                         })).filter(nt => nt.tasks.length > 0);
+
+                         if (visibleNoteTasks.length === 0) {
+                             return (
+                                 <div className="text-center text-slate-500 dark:text-slate-500 py-8">
+                                     No pending tasks found.
+                                     <br/><span className="text-xs">Completed tasks are hidden.</span>
+                                 </div>
+                             );
+                         }
+
+                         return visibleNoteTasks.map(({ note, tasks }) => (
                              <div key={note.id} className="space-y-2">
                                  <div 
                                     className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
@@ -1103,7 +1125,7 @@ export default function App() {
                                      {tasks.map((task, i) => {
                                          // Show all, but styling differs for completed
                                          return (
-                                             <div key={i} className={`flex items-start gap-3 group ${task.isChecked ? 'opacity-40 hover:opacity-100 transition-opacity' : ''}`}>
+                                             <div key={`${note.id}-${task.lineIndex}`} className={`flex items-start gap-3 group ${task.isChecked ? 'opacity-40 hover:opacity-100 transition-opacity' : ''}`}>
                                                  <input 
                                                     type="checkbox" 
                                                     checked={task.isChecked} 
@@ -1126,8 +1148,8 @@ export default function App() {
                                      })}
                                  </div>
                              </div>
-                         ))
-                     )}
+                         ));
+                     })()}
                  </div>
              </div>
           </div>
