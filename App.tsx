@@ -3,7 +3,7 @@ import Sidebar from './components/Sidebar';
 import Editor from './components/Editor';
 import { Note, Folder, SortField, SortDirection, Theme } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS } from './constants';
-import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, AlertTriangle, PanelLeft, Calendar, Folder as FolderIcon, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, Upload, Download, FileText } from 'lucide-react';
+import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, Upload, Download, FileText } from 'lucide-react';
 import { getDropboxAuthUrl, parseAuthTokenFromUrl, uploadDataToDropbox, downloadDataFromDropbox } from './utils/dropboxService';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -36,7 +36,7 @@ const processTemplate = (template: string, title: string) => {
 
     // Regex for {{date(+1d):Format}}
     // Captures: 1: Offset (+1d, -2M), 2: Format (YYYY-MM-DD)
-    result = result.replace(/\{\{date([+-]\d+[dmy])?:(.*?)\}\}/gi, (match, offset, format) => {
+    result = result.replace(/\{\{date([+-]\d+[dmy])?:(.*?)\}\}/gi, (_, offset, format) => {
         const d = new Date();
         if (offset) {
             const operator = offset.charAt(0); // + or -
@@ -1116,13 +1116,7 @@ export default function App() {
                                  </div>
                                  <div className="pl-4 space-y-1">
                                      {tasks.map((task, i) => {
-                                         // If checked and NOT recently completed, hide it (to show only pending or just-completed)
-                                         // Actually, let's show all but style completed ones differently
-                                         const isHidden = task.isChecked && !recentlyCompletedTasks.has(`${note.id}-${task.lineIndex}`);
-                                         
-                                         // Filter Option: Show only Pending? 
-                                         // For now, let's show all but dim completed ones heavily
-                                         
+                                         // Show all, but styling differs for completed
                                          return (
                                              <div key={i} className={`flex items-start gap-3 group ${task.isChecked ? 'opacity-40 hover:opacity-100 transition-opacity' : ''}`}>
                                                  <input 
@@ -1152,6 +1146,66 @@ export default function App() {
                  </div>
              </div>
           </div>
+      )}
+
+      {/* Confirm Modal */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}></div>
+            <div className="relative bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl p-6 max-w-sm w-full">
+                <h3 className="text-lg font-bold mb-2 text-slate-900 dark:text-slate-100">Confirm Action</h3>
+                <p className="text-slate-600 dark:text-slate-300 mb-6">{confirmModal.message}</p>
+                <div className="flex justify-end gap-2">
+                    <button 
+                        onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                        className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 rounded transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        onClick={confirmModal.onConfirm}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
+                    >
+                        Confirm
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* Input Modal */}
+      {inputModal.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setInputModal(prev => ({ ...prev, isOpen: false }))}></div>
+            <div className="relative bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl p-6 max-w-sm w-full">
+                <h3 className="text-lg font-bold mb-4 text-slate-900 dark:text-slate-100">{inputModal.title}</h3>
+                <input
+                    autoFocus
+                    type="text"
+                    className="w-full bg-gray-100 dark:bg-slate-950 border border-gray-300 dark:border-slate-800 rounded p-2 mb-6 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-indigo-500"
+                    value={inputModal.value}
+                    onChange={(e) => setInputModal(prev => ({ ...prev, value: e.target.value }))}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') inputModal.onConfirm(inputModal.value);
+                        if (e.key === 'Escape') setInputModal(prev => ({ ...prev, isOpen: false }));
+                    }}
+                />
+                <div className="flex justify-end gap-2">
+                    <button 
+                        onClick={() => setInputModal(prev => ({ ...prev, isOpen: false }))}
+                        className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 rounded transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        onClick={() => inputModal.onConfirm(inputModal.value)}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors"
+                    >
+                        Confirm
+                    </button>
+                </div>
+            </div>
+        </div>
       )}
 
     </div>
