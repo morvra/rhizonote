@@ -96,9 +96,6 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [syncMessage, setSyncMessage] = useState('');
 
-  // Track tasks completed *during* the current modal session so they don't disappear immediately
-  const [recentlyCompletedTasks, setRecentlyCompletedTasks] = useState<Set<string>>(new Set());
-
   // Daily Note Settings
   const [dailyNoteFormat, setDailyNoteFormat] = useState('YYYY-MM-DD');
   const [dailyNoteFolderId, setDailyNoteFolderId] = useState<string>(''); // Empty string means root
@@ -250,20 +247,9 @@ export default function App() {
 
   const handleCloseTasks = () => {
       setShowTasks(false);
-      // Clear the "recently completed" tracking when closing the modal
-      setRecentlyCompletedTasks(new Set());
   };
 
   const handleToggleTaskFromModal = (noteId: string, lineIndex: number, currentChecked: boolean) => {
-      // If currently unchecked (false), we are checking it. Add to "recently completed" so it stays visible.
-      if (!currentChecked) {
-          setRecentlyCompletedTasks(prev => {
-              const newSet = new Set(prev);
-              newSet.add(`${noteId}-${lineIndex}`);
-              return newSet;
-          });
-      }
-      
       setNotes(prev => prev.map(note => {
           if (note.id !== noteId) return note;
 
@@ -690,7 +676,6 @@ export default function App() {
             e.preventDefault();
             setShowTasks(prev => {
                 if (prev) {
-                    setRecentlyCompletedTasks(new Set());
                     return false;
                 }
                 return true;
