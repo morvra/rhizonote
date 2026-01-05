@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Note } from '../types';
 import WikiLinkPopup from './WikiLinkPopup';
-import { Edit3, Eye, RefreshCw, Calendar, Bold, Italic, Strikethrough, Code, Link as LinkIcon, FilePlus } from 'lucide-react';
+import { Edit3, Eye, RefreshCw, Bold, Italic, Strikethrough, Code, Link as LinkIcon, FilePlus } from 'lucide-react';
 
 interface EditorProps {
   note: Note;
@@ -410,7 +410,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     }
   };
 
-  const handleMouseUp = (e: React.MouseEvent<HTMLTextAreaElement>) => {
+  const handleMouseUp = () => {
     updateSelectionMenu();
     // Only update visual line index, don't update logical selection history
     // This prevents "click" handler from thinking we've already visited this line
@@ -425,10 +425,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     if (!selectionMenu) return;
     const { start, end, text } = selectionMenu;
     const isWiki = wrapper === '[[';
-    const isCode = wrapper === '`';
-    const isItalic = wrapper === '*';
-    const isStrike = wrapper === '~~';
-    const isBold = wrapper === '**';
     
     let prefix = wrapper;
     let suffix = wrapper;
