@@ -449,6 +449,23 @@ export default function App() {
     });
   };
 
+  const handleRenameFolder = (id: string) => {
+    const folder = folders.find(f => f.id === id);
+    if (!folder) return;
+
+    setInputModal({
+        isOpen: true,
+        title: 'Rename Folder',
+        value: folder.name,
+        onConfirm: (newName) => {
+            if (newName && newName !== folder.name) {
+                setFolders((prev: Folder[]) => prev.map(f => f.id === id ? { ...f, name: newName } : f));
+            }
+            setInputModal({ isOpen: false, title: '', value: '', onConfirm: () => {} });
+        }
+    });
+  };
+
   const getDescendantFolderIds = (folderId: string, allFolders: Folder[]): string[] => {
       const children = allFolders.filter(f => f.parentId === folderId);
       let ids = children.map(c => c.id);
@@ -848,6 +865,7 @@ export default function App() {
         onCreateFolder={handleCreateFolder}
         onDeleteNote={handleDeleteNote}
         onDeleteFolder={handleDeleteFolder}
+        onRenameFolder={handleRenameFolder}
         onToggleBookmark={handleToggleBookmark}
         onReorderBookmark={handleReorderBookmark}
         onMoveNote={handleMoveNote}

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Note, Folder, SortField, SortDirection } from '../types';
-import { FileText, Bookmark, Plus, Search, Trash2, Folder as FolderIcon, FolderOpen, ChevronRight, ChevronDown, Settings } from 'lucide-react';
+import { FileText, Bookmark, Plus, Search, Trash2, Folder as FolderIcon, FolderOpen, ChevronRight, ChevronDown, Settings, Edit2 } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -14,6 +14,7 @@ interface SidebarProps {
   onCreateFolder: (parentId: string | null) => void;
   onDeleteNote: (id: string) => void;
   onDeleteFolder: (id: string) => void;
+  onRenameFolder: (id: string) => void;
   onToggleBookmark: (id: string) => void;
   onReorderBookmark?: (draggedId: string, targetId: string) => void;
   onMoveNote: (noteId: string, folderId: string | null) => void;
@@ -132,6 +133,7 @@ const FolderItem: React.FC<{
   onDeleteNote: (id: string) => void;
   onCreateFolder: (parentId: string) => void;
   onDeleteFolder: (id: string) => void;
+  onRenameFolder: (id: string) => void;
   onMoveNote: (noteId: string, folderId: string) => void;
   onMoveFolder: (folderId: string, parentId: string) => void;
   sortField: SortField;
@@ -147,7 +149,8 @@ const FolderItem: React.FC<{
   onToggleBookmark, 
   onDeleteNote, 
   onCreateFolder, 
-  onDeleteFolder, 
+  onDeleteFolder,
+  onRenameFolder, 
   onMoveNote,
   onMoveFolder, 
   sortField,
@@ -226,6 +229,17 @@ const FolderItem: React.FC<{
         </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onRenameFolder(folder.id);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="p-0.5 hover:text-slate-800 dark:hover:text-white"
+                title="Rename Folder"
+            >
+                <Edit2 size={11} />
+            </button>
+            <button
               onClick={(e) => {
                 e.stopPropagation();
                 onCreateFolder(folder.id);
@@ -266,6 +280,7 @@ const FolderItem: React.FC<{
                   onDeleteNote={onDeleteNote}
                   onCreateFolder={onCreateFolder}
                   onDeleteFolder={onDeleteFolder}
+                  onRenameFolder={onRenameFolder}
                   onMoveNote={onMoveNote}
                   onMoveFolder={onMoveFolder}
                   sortField={sortField}
@@ -321,6 +336,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onCreateFolder,
   onDeleteNote,
   onDeleteFolder,
+  onRenameFolder,
   onToggleBookmark,
   onReorderBookmark,
   onMoveNote,
@@ -481,6 +497,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                             onDeleteNote={onDeleteNote}
                             onCreateFolder={onCreateFolder}
                             onDeleteFolder={onDeleteFolder}
+                            onRenameFolder={onRenameFolder}
                             onMoveNote={onMoveNote}
                             onMoveFolder={onMoveFolder}
                             sortField={sortField}
