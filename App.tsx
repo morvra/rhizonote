@@ -13,6 +13,10 @@ const LS_KEY_NOTES = 'rhizonote_notes';
 const LS_KEY_FOLDERS = 'rhizonote_folders';
 const LS_KEY_THEME = 'rhizonote_theme';
 const LS_KEY_DB_TOKEN = 'rhizonote_dropbox_token';
+const LS_KEY_PANES = 'rhizonote_panes';
+const LS_KEY_ACTIVE_PANE = 'rhizonote_active_pane';
+const LS_KEY_SORT = 'rhizonote_sort';
+const LS_KEY_EXPANDED = 'rhizonote_expanded';
 
 // Simple date formatter
 const formatDate = (date: Date, format: string) => {
@@ -119,8 +123,22 @@ export default function App() {
   }>({ isOpen: false, title: '', value: '', onConfirm: () => {} });
 
   // Sort State
-  const [sortField, setSortField] = useState<SortField>('updated');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [sortField, setSortField] = useState<SortField>(() => {
+      const saved = localStorage.getItem(LS_KEY_SORT);
+      return saved ? JSON.parse(saved).field : 'updated';
+  });
+  const [sortDirection, setSortDirection] = useState<SortDirection>(() => {
+      const saved = localStorage.getItem(LS_KEY_SORT);
+      return saved ? JSON.parse(saved).direction : 'desc';
+  });
+
+  // Folder Expansion State
+  const [expandedFolderIds, setExpandedFolderIds] = useState<string[]>(() => {
+      const saved = localStorage.getItem(LS_KEY_EXPANDED);
+      if (saved) return JSON.parse(saved);
+      // Default: All folders expanded
+      return INITIAL_FOLDERS.map(f => f.id);
+  });
   
   // Layout State
   const [sidebarWidth, setSidebarWidth] = useState(256); // Default 256px
@@ -129,13 +147,19 @@ export default function App() {
   const isResizingSplit = useRef(false);
 
   // State for panes and their history
-  const [panes, setPanes] = useState<(string | null)[]>(['1', null]); 
+  const [panes, setPanes] = useState<(string | null)[]>(() => {
+      const saved = localStorage.getItem(LS_KEY_PANES);
+      return saved ? JSON.parse(saved) : ['1', null];
+  }); 
   const [history, setHistory] = useState<PaneHistory[]>([
       { stack: ['1'], currentIndex: 0 }, // History for Pane 0
       { stack: [], currentIndex: -1 }    // History for Pane 1
   ]);
 
-  const [activePaneIndex, setActivePaneIndex] = useState<number>(0);
+  const [activePaneIndex, setActivePaneIndex] = useState<number>(() => {
+      const saved = localStorage.getItem(LS_KEY_ACTIVE_PANE);
+      return saved ? parseInt(saved, 10) : 0;
+  });
   
   // Sidebar Visibility States
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -160,6 +184,25 @@ export default function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [theme]);
+
+  // Persist Panes State
+  useEffect(() => {
+    localStorage.setItem(LS_KEY_PANES, JSON.stringify(panes));
+  }, [panes]);
+
+  useEffect(() => {
+    localStorage.setItem(LS_KEY_ACTIVE_PANE, activePaneIndex.toString());
+  }, [activePaneIndex]);
+
+  // Persist Sort State
+  useEffect(() => {
+      localStorage.setItem(LS_KEY_SORT, JSON.stringify({ field: sortField, direction: sortDirection }));
+  }, [sortField, sortDirection]);
+
+  // Persist Expanded Folders
+  useEffect(() => {
+      localStorage.setItem(LS_KEY_EXPANDED, JSON.stringify(expandedFolderIds));
+  }, [expandedFolderIds]);
 
   // Dropbox Auth Check
   useEffect(() => {
@@ -346,12 +389,19 @@ export default function App() {
         value: '',
         onConfirm: (name) => {
             if (name) {
-                setFolders(prev => [...prev, { 
+                const newFolder = { 
                     id: generateId(), 
                     name, 
                     parentId, 
                     createdAt: Date.now() 
-                }]);
+                };
+                setFolders(prev => [...prev, newFolder]);
+                // Automatically expand the new folder (or its parent)
+                if (parentId) {
+                    setExpandedFolderIds(prev => prev.includes(parentId) ? prev : [...prev, parentId]);
+                }
+                // Expand the new folder itself so user can drop things into it
+                setExpandedFolderIds(prev => [...prev, newFolder.id]);
             }
             setInputModal(prev => ({ ...prev, isOpen: false }));
         }
@@ -379,6 +429,9 @@ export default function App() {
             setFolders(prev => prev.filter(f => !idsToDelete.includes(f.id)));
             setNotes(prev => prev.filter(n => !n.folderId || !idsToDelete.includes(n.folderId)));
             
+            // Cleanup expanded state
+            setExpandedFolderIds(prev => prev.filter(eid => !idsToDelete.includes(eid)));
+
             // Check if deleted folder was the daily note folder
             if (dailyNoteFolderId === id) {
                 setDailyNoteFolderId('');
@@ -496,6 +549,14 @@ export default function App() {
           setSortField(field);
           setSortDirection(field === 'name' ? 'asc' : 'desc');
       }
+  };
+
+  const handleToggleFolderExpand = (folderId: string) => {
+      setExpandedFolderIds(prev => 
+        prev.includes(folderId) 
+            ? prev.filter(id => id !== folderId) 
+            : [...prev, folderId]
+      );
   };
 
   const openNote = (id: string) => {
@@ -735,6 +796,8 @@ export default function App() {
         onSortChange={handleSortChange}
         width={sidebarWidth}
         onOpenSettings={() => setShowSettings(true)}
+        expandedFolderIds={expandedFolderIds}
+        onToggleFolderExpand={handleToggleFolderExpand}
       />
 
       {/* Sidebar Resizer - Only visible on desktop when sidebar is open */}

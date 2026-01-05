@@ -23,6 +23,8 @@ interface SidebarProps {
   onSortChange: (field: SortField) => void;
   width?: number;
   onOpenSettings: () => void;
+  expandedFolderIds: string[];
+  onToggleFolderExpand: (folderId: string) => void;
 }
 
 interface NoteItemProps {
@@ -135,6 +137,8 @@ const FolderItem: React.FC<{
   onMoveFolder: (folderId: string, parentId: string) => void;
   sortField: SortField;
   sortDirection: SortDirection;
+  expandedFolderIds: string[];
+  onToggleExpand: (id: string) => void;
 }> = ({ 
   folder, 
   allFolders, 
@@ -148,9 +152,11 @@ const FolderItem: React.FC<{
   onMoveNote,
   onMoveFolder, 
   sortField,
-  sortDirection
+  sortDirection,
+  expandedFolderIds,
+  onToggleExpand
 }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const isExpanded = expandedFolderIds.includes(folder.id);
   const [isDragOver, setIsDragOver] = useState(false);
 
   // Filter children
@@ -173,10 +179,11 @@ const FolderItem: React.FC<{
     
     if (noteId) {
       onMoveNote(noteId, folder.id);
-      setIsExpanded(true);
+      // Auto-expand if dropping a note so user sees it
+      if (!isExpanded) onToggleExpand(folder.id);
     } else if (folderId && folderId !== folder.id) {
         onMoveFolder(folderId, folder.id);
-        setIsExpanded(true);
+        // Do NOT force expand when moving a folder, preserving user state
     }
   };
 
@@ -212,7 +219,7 @@ const FolderItem: React.FC<{
             ? 'text-indigo-600 dark:text-indigo-200' 
             : 'hover:bg-gray-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200'
         }`}
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={() => onToggleExpand(folder.id)}
       >
         <div className="flex items-center gap-1 font-semibold text-xs uppercase tracking-wide pointer-events-none">
           {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
@@ -224,7 +231,8 @@ const FolderItem: React.FC<{
               onClick={(e) => {
                 e.stopPropagation();
                 onCreateFolder(folder.id);
-                setIsExpanded(true);
+                // Expand to show new subfolder
+                if (!isExpanded) onToggleExpand(folder.id);
               }}
               onMouseDown={(e) => e.stopPropagation()}
               className="p-0.5 hover:text-slate-800 dark:hover:text-white"
@@ -264,6 +272,8 @@ const FolderItem: React.FC<{
                   onMoveFolder={onMoveFolder}
                   sortField={sortField}
                   sortDirection={sortDirection}
+                  expandedFolderIds={expandedFolderIds}
+                  onToggleExpand={onToggleExpand}
               />
           ))}
           {sortedNotes.map(note => (
@@ -321,7 +331,9 @@ const Sidebar: React.FC<SidebarProps> = ({
   sortDirection,
   onSortChange,
   width,
-  onOpenSettings
+  onOpenSettings,
+  expandedFolderIds,
+  onToggleFolderExpand
 }) => {
   const [search, setSearch] = React.useState('');
 
@@ -499,6 +511,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                             onMoveFolder={onMoveFolder}
                             sortField={sortField}
                             sortDirection={sortDirection}
+                            expandedFolderIds={expandedFolderIds}
+                            onToggleExpand={onToggleFolderExpand}
                         />
                     ))}
 
