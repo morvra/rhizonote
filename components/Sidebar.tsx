@@ -82,7 +82,7 @@ const NoteItem: React.FC<NoteItemProps> = ({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`group flex items-center justify-between px-3 py-1.5 ml-2 mb-0.5 rounded-md cursor-pointer transition-colors ${
+      className={`group flex items-center justify-between px-2 py-1 ml-2 mb-px rounded-md cursor-pointer transition-colors ${
         note.id === activeNoteId
           ? 'bg-indigo-100 dark:bg-indigo-600/20 text-indigo-700 dark:text-indigo-300 border-l-2 border-indigo-500'
           : 'text-slate-600 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200 border-l-2 border-transparent'
@@ -90,8 +90,8 @@ const NoteItem: React.FC<NoteItemProps> = ({
       onClick={() => onSelect(note.id)}
     >
       <div className="flex items-center gap-2 truncate flex-1">
-        <FileText size={14} className={note.id === activeNoteId ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500'} />
-        <span className="text-sm truncate font-medium">{note.title || 'Untitled'}</span>
+        <FileText size={13} className={note.id === activeNoteId ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500'} />
+        <span className="text-xs truncate font-medium">{note.title || 'Untitled'}</span>
       </div>
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
@@ -100,10 +100,10 @@ const NoteItem: React.FC<NoteItemProps> = ({
             onToggleBookmark(note.id);
           }}
           onMouseDown={(e) => e.stopPropagation()} 
-          className={`p-1 rounded hover:bg-gray-300 dark:hover:bg-slate-700 ${note.isBookmarked ? 'text-yellow-600 dark:text-yellow-500' : 'text-slate-400 dark:text-slate-500'}`}
+          className={`p-0.5 rounded hover:bg-gray-300 dark:hover:bg-slate-700 ${note.isBookmarked ? 'text-yellow-600 dark:text-yellow-500' : 'text-slate-400 dark:text-slate-500'}`}
           title={note.isBookmarked ? 'Remove Bookmark' : 'Bookmark'}
         >
-          <Bookmark size={12} fill={note.isBookmarked ? 'currentColor' : 'none'} />
+          <Bookmark size={11} fill={note.isBookmarked ? 'currentColor' : 'none'} />
         </button>
         <button
           onClick={(e) => {
@@ -111,10 +111,10 @@ const NoteItem: React.FC<NoteItemProps> = ({
             onDelete(note.id);
           }}
           onMouseDown={(e) => e.stopPropagation()} 
-          className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/50 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400"
+          className="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/50 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400"
           title="Delete"
         >
-          <Trash2 size={12} />
+          <Trash2 size={11} />
         </button>
       </div>
     </div>
@@ -199,7 +199,7 @@ const FolderItem: React.FC<{
 
   return (
     <div 
-      className={`mb-1 rounded transition-colors ${isDragOver ? 'bg-indigo-50 dark:bg-slate-800/50 ring-1 ring-indigo-500' : ''}`}
+      className={`mb-px rounded transition-colors ${isDragOver ? 'bg-indigo-50 dark:bg-slate-800/50 ring-1 ring-indigo-500' : ''}`}
       draggable
       onDragStart={handleDragStart}
       onDrop={handleDrop}
@@ -207,7 +207,7 @@ const FolderItem: React.FC<{
       onDragLeave={handleDragLeave}
     >
       <div 
-        className={`group flex items-center justify-between px-2 py-1.5 rounded cursor-pointer text-slate-500 dark:text-slate-400 transition-colors ${
+        className={`group flex items-center justify-between px-2 py-1 rounded cursor-pointer text-slate-500 dark:text-slate-400 transition-colors ${
           isDragOver 
             ? 'text-indigo-600 dark:text-indigo-200' 
             : 'hover:bg-gray-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200'
@@ -215,8 +215,8 @@ const FolderItem: React.FC<{
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center gap-1 font-semibold text-xs uppercase tracking-wide pointer-events-none">
-          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          {isExpanded ? <FolderOpen size={14} className="text-indigo-500 dark:text-indigo-400" /> : <FolderIcon size={14} />}
+          {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          {isExpanded ? <FolderOpen size={13} className="text-indigo-500 dark:text-indigo-400" /> : <FolderIcon size={13} />}
           <span className="ml-1 select-none">{folder.name}</span>
         </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -227,10 +227,10 @@ const FolderItem: React.FC<{
                 setIsExpanded(true);
               }}
               onMouseDown={(e) => e.stopPropagation()}
-              className="p-1 hover:text-slate-800 dark:hover:text-white"
+              className="p-0.5 hover:text-slate-800 dark:hover:text-white"
               title="New Subfolder"
             >
-               <Plus size={12} />
+               <Plus size={11} />
             </button>
             <button
               onClick={(e) => {
@@ -238,16 +238,16 @@ const FolderItem: React.FC<{
                 onDeleteFolder(folder.id);
               }}
               onMouseDown={(e) => e.stopPropagation()}
-              className="p-1 hover:text-red-500 dark:hover:text-red-400"
+              className="p-0.5 hover:text-red-500 dark:hover:text-red-400"
               title="Delete Folder"
             >
-               <Trash2 size={12} />
+               <Trash2 size={11} />
             </button>
         </div>
       </div>
       
       {isExpanded && (
-        <div className="border-l border-gray-300 dark:border-slate-800 ml-3 pl-1 mt-1 min-h-[5px]">
+        <div className="border-l border-gray-300 dark:border-slate-800 ml-2 pl-1 mt-0.5 min-h-[2px]">
           {sortedFolders.map(subFolder => (
               <FolderItem
                   key={subFolder.id}
@@ -277,7 +277,7 @@ const FolderItem: React.FC<{
              />
           ))}
           {sortedFolders.length === 0 && sortedNotes.length === 0 && (
-             <div className="text-xs text-slate-400 dark:text-slate-600 px-4 py-1 italic pointer-events-none">Empty</div>
+             <div className="text-[10px] text-slate-400 dark:text-slate-600 px-4 py-0.5 italic pointer-events-none">Empty</div>
           )}
         </div>
       )}
@@ -482,7 +482,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </div>
             ) : (
                 /* Tree View */
-                <div className="space-y-1 mb-2">
+                <div className="space-y-0.5 mb-2">
                     {sortedRootFolders.map(folder => (
                         <FolderItem
                             key={folder.id}
@@ -502,7 +502,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                         />
                     ))}
 
-                    {sortedRootFolders.length > 0 && sortedRootNotes.length > 0 && <div className="h-2"></div>}
+                    {sortedRootFolders.length > 0 && sortedRootNotes.length > 0 && <div className="h-1"></div>}
                     
                     {sortedRootNotes.map(note => (
                         <NoteItem
