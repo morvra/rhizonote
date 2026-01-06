@@ -316,6 +316,7 @@ export default function App() {
           const code = urlParams.get('code');
           
           if (code) {
+              // Prevent double execution
               if (authCodeProcessed.current) return;
               authCodeProcessed.current = true;
 
@@ -336,9 +337,6 @@ export default function App() {
                       setDropboxRefreshToken(refresh_token);
                       localStorage.setItem(LS_KEY_DB_REFRESH_TOKEN, refresh_token);
                   }
-
-                  // Clear URL parameters
-                  window.history.replaceState({}, document.title, window.location.pathname);
                   
                   setSyncStatus('success');
                   setSyncMessage('Dropbox connected successfully!');
@@ -347,6 +345,9 @@ export default function App() {
                   console.error('Failed to exchange token', e);
                   setSyncStatus('error');
                   setSyncMessage(`Login failed: ${e.message || 'Unknown error'}`);
+              } finally {
+                  // Always clear URL parameters to keep it clean
+                  window.history.replaceState({}, document.title, window.location.pathname);
               }
               return;
           }

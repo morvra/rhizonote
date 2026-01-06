@@ -56,19 +56,39 @@ const chunkArray = <T>(array: T[], size: number): T[][] => {
 };
 
 // Updated to use PKCE flow (async)
+// We manually handle the code verifier storage to ensure reliability across the redirect
 export const getDropboxAuthUrl = async (): Promise<string> => {
   const dbxAuth = new DropboxAuth({ clientId: CLIENT_ID });
   const redirectUri = window.location.href.split('#')[0].split('?')[0];
+  
   // Args: redirectUri, state, responseType, tokenAccessType, scope, includeGrantedScopes, usePkce
-  // 'offline' access type is required to get a refresh token
-  return dbxAuth.getAuthenticationUrl(redirectUri, undefined, 'code', 'offline', undefined, undefined, true) as Promise<string>;
+  const authUrl = await dbxAuth.getAuthenticationUrl(redirectUri, undefined, 'code', 'offline', undefined, undefined, true);
+  
+  // Explicitly save the code verifier to sessionStorage
+  const codeVerifier = dbxAuth.getCodeVerifier();
+  if (codeVerifier) {
+      window.sessionStorage.setItem('rhizonote_dropbox_code_verifier', codeVerifier);
+  }
+
+  return authUrl as string;
 };
 
 // New helper to exchange authorization code for tokens
 export const exchangeCodeForToken = async (code: string): Promise<DropboxAuthResult> => {
     const dbxAuth = new DropboxAuth({ clientId: CLIENT_ID });
+    
+    // Retrieve and set the code verifier
+    const codeVerifier = window.sessionStorage.getItem('rhizonote_dropbox_code_verifier');
+    if (codeVerifier) {
+        dbxAuth.setCodeVerifier(codeVerifier);
+    }
+
     const redirectUri = window.location.href.split('#')[0].split('?')[0];
     const response = await dbxAuth.getAccessTokenFromCode(redirectUri, code);
+    
+    // Clean up
+    window.sessionStorage.removeItem('rhizonote_dropbox_code_verifier');
+    
     return response as unknown as DropboxAuthResult;
 };
 
