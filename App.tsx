@@ -3,7 +3,7 @@ import Sidebar from './components/Sidebar';
 import Editor from './components/Editor';
 import { Note, Folder, SortField, SortDirection, Theme } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS } from './constants';
-import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle } from 'lucide-react';
+import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle, Shuffle } from 'lucide-react';
 import { getDropboxAuthUrl, parseAuthTokenFromUrl, syncDropboxData, getNotePath, getFolderPath, RenameOperation, exchangeCodeForToken } from './utils/dropboxService';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -535,6 +535,15 @@ export default function App() {
     setMobileMenuOpen(false);
   };
 
+  const handleOpenRandomNote = () => {
+    const activeNotes = notes.filter(n => !n.deletedAt);
+    if (activeNotes.length > 0) {
+        const randomIndex = Math.floor(Math.random() * activeNotes.length);
+        const randomNote = activeNotes[randomIndex];
+        openNote(randomNote.id);
+    }
+  };
+
   const handleCreateFolder = (parentId: string | null = null) => {
     setInputModal({
         isOpen: true,
@@ -995,6 +1004,11 @@ export default function App() {
             handleOpenDailyNote();
         }
 
+        if (e.altKey && e.key.toLowerCase() === 'r') {
+            e.preventDefault();
+            handleOpenRandomNote();
+        }
+
         if (isMod && e.key.toLowerCase() === 's') {
             e.preventDefault(); 
             handleSync();
@@ -1147,6 +1161,14 @@ export default function App() {
                     title="Task List (Alt + T)"
                 >
                     <CheckSquare size={18} />
+                </button>
+
+                <button
+                    onClick={handleOpenRandomNote}
+                    className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
+                    title="Open Random Note (Alt + R)"
+                >
+                    <Shuffle size={18} />
                 </button>
 
                 <button
@@ -1445,6 +1467,7 @@ export default function App() {
                      <ShortcutRow keys={['Ctrl', '\\']} description="Toggle Sidebar" />
                      <ShortcutRow keys={['Ctrl', '?']} description="Show Shortcuts" />
                      <ShortcutRow keys={['Alt', 'T']} description="Toggle Task List" />
+                     <ShortcutRow keys={['Alt', 'R']} description="Open Random Note" />
                      <ShortcutRow keys={['Ctrl', '[']} description="Go Back" />
                      <ShortcutRow keys={['Ctrl', ']']} description="Go Forward" />
                      <ShortcutRow keys={['Cmd', 'Shift', 'E']} description="Extract Selection" />
