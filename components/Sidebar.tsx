@@ -47,6 +47,7 @@ const NoteItem: React.FC<NoteItemProps> = ({
   const [isDragOver, setIsDragOver] = useState(false);
 
   const handleDragStart = (e: React.DragEvent) => {
+    e.stopPropagation(); // Prevent parent folder from being dragged
     e.dataTransfer.setData('noteId', note.id);
     e.dataTransfer.effectAllowed = 'move';
   };
@@ -54,25 +55,23 @@ const NoteItem: React.FC<NoteItemProps> = ({
   const handleDragOver = (e: React.DragEvent) => {
     if (onNoteDrop) {
         e.preventDefault();
-        e.stopPropagation();
         setIsDragOver(true);
     }
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
     setIsDragOver(false);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     if (onNoteDrop) {
         e.preventDefault();
-        e.stopPropagation();
         setIsDragOver(false);
         const sourceId = e.dataTransfer.getData('noteId');
         if (sourceId && sourceId !== note.id) {
             onNoteDrop(sourceId, note.id);
+            e.stopPropagation(); // Only stop if we handled it
         }
     }
   };
@@ -92,8 +91,8 @@ const NoteItem: React.FC<NoteItemProps> = ({
       onClick={() => onSelect(note.id)}
     >
       <div className="flex items-center gap-2 truncate flex-1">
-        <FileText size={13} className={note.id === activeNoteId ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500'} />
-        <span className="text-xs truncate font-medium">{note.title || 'Untitled'}</span>
+        <FileText className="w-4 h-4 md:w-[13px] md:h-[13px] text-slate-400 dark:text-slate-500" />
+        <span className="text-sm md:text-xs truncate font-medium">{note.title || 'Untitled'}</span>
       </div>
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
@@ -149,7 +148,7 @@ const FolderItem: React.FC<{
   onToggleBookmark, 
   onDeleteNote, 
   onCreateFolder, 
-  onDeleteFolder,
+  onDeleteFolder, 
   onRenameFolder, 
   onMoveNote,
   onMoveFolder, 
@@ -173,7 +172,6 @@ const FolderItem: React.FC<{
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
     setIsDragOver(false);
     
     const noteId = e.dataTransfer.getData('noteId');
@@ -181,27 +179,27 @@ const FolderItem: React.FC<{
     
     if (noteId) {
       onMoveNote(noteId, folder.id);
+      e.stopPropagation(); // Stop bubbling if handled
       // Removed auto-expansion when dropping a note
     } else if (folderId && folderId !== folder.id) {
         onMoveFolder(folderId, folder.id);
+        e.stopPropagation(); // Stop bubbling if handled
         // Do NOT force expand when moving a folder, preserving user state
     }
   };
 
   const handleDragStart = (e: React.DragEvent) => {
+      e.stopPropagation(); // Prevent parent folder from being dragged (if nested)
       e.dataTransfer.setData('folderId', folder.id);
-      e.stopPropagation();
   };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
     setIsDragOver(true);
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
     setIsDragOver(false);
   };
 
@@ -222,9 +220,15 @@ const FolderItem: React.FC<{
         }`}
         onClick={() => onToggleExpand(folder.id)}
       >
-        <div className="flex items-center gap-1 font-semibold text-xs uppercase tracking-wide pointer-events-none">
-          {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-          {isExpanded ? <FolderOpen size={13} className="text-indigo-500 dark:text-indigo-400" /> : <FolderIcon size={13} />}
+        <div className="flex items-center gap-1 font-semibold text-sm md:text-xs uppercase tracking-wide pointer-events-none">
+          {isExpanded 
+            ? <ChevronDown className="w-4 h-4 md:w-[13px] md:h-[13px]" /> 
+            : <ChevronRight className="w-4 h-4 md:w-[13px] md:h-[13px]" />
+          }
+          {isExpanded 
+            ? <FolderOpen className="text-indigo-500 dark:text-indigo-400 w-4 h-4 md:w-[13px] md:h-[13px]" /> 
+            : <FolderIcon className="w-4 h-4 md:w-[13px] md:h-[13px]" />
+          }
           <span className="ml-1 select-none">{folder.name}</span>
         </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
