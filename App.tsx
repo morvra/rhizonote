@@ -3,7 +3,7 @@ import Sidebar from './components/Sidebar';
 import Editor from './components/Editor';
 import { Note, Folder, SortField, SortDirection, Theme } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS } from './constants';
-import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, Upload, Download, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown } from 'lucide-react';
+import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, Upload, Download, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle } from 'lucide-react';
 import { getDropboxAuthUrl, parseAuthTokenFromUrl, uploadDataToDropbox, downloadDataFromDropbox } from './utils/dropboxService';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -271,7 +271,13 @@ export default function App() {
   };
 
   const handleSyncPush = async () => {
-      if (!dropboxToken) return;
+      if (!dropboxToken) {
+          // If trying to sync via shortcut without token, show settings or alert
+          if (confirm("Dropbox is not connected. Open settings?")) {
+            setShowSettings(true);
+          }
+          return;
+      }
       setSyncStatus('syncing');
       try {
           await uploadDataToDropbox(dropboxToken, notes, folders);
@@ -791,6 +797,12 @@ export default function App() {
             handleOpenDailyNote();
         }
 
+        // Manual Sync: Mod + S
+        if (isMod && e.key.toLowerCase() === 's') {
+            e.preventDefault(); // Prevent browser save dialog
+            handleSyncPush();
+        }
+
         // Toggle Sidebar: Mod + \
         if (isMod && e.key === '\\') {
             e.preventDefault();
@@ -950,6 +962,40 @@ export default function App() {
                     title="Create New Note (Ctrl/Cmd + N)"
                 >
                     <Plus size={18} />
+                </button>
+
+                {/* Sync Button & Indicator */}
+                <button
+                    onClick={handleSyncPush}
+                    disabled={!dropboxToken || syncStatus === 'syncing'}
+                    className={`p-1 rounded transition-colors ml-1 flex items-center justify-center 
+                        ${!dropboxToken 
+                            ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' 
+                            : syncStatus === 'error'
+                                ? 'text-red-500 hover:bg-red-100 dark:hover:bg-red-900/20'
+                                : syncStatus === 'success'
+                                    ? 'text-green-500 hover:bg-green-100 dark:hover:bg-green-900/20'
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-200 dark:hover:bg-slate-700'
+                        }`}
+                    title={
+                        !dropboxToken 
+                        ? "Dropbox Not Connected" 
+                        : syncStatus === 'syncing' 
+                            ? "Syncing..." 
+                            : syncStatus === 'error'
+                                ? "Sync Failed (Click to retry)"
+                                : "Sync to Dropbox (Ctrl/Cmd + S)"
+                    }
+                >
+                    {syncStatus === 'syncing' ? (
+                        <RefreshCw size={18} className="animate-spin" />
+                    ) : syncStatus === 'success' ? (
+                        <Check size={18} />
+                    ) : syncStatus === 'error' ? (
+                        <AlertCircle size={18} />
+                    ) : (
+                        <Cloud size={18} />
+                    )}
                 </button>
             </div>
             
@@ -1221,6 +1267,7 @@ export default function App() {
                 <div className="space-y-3">
                      <ShortcutRow keys={['Ctrl', 'N']} description="Create New Note" />
                      <ShortcutRow keys={['Ctrl', 'D']} description="Open Daily Note" />
+                     <ShortcutRow keys={['Ctrl', 'S']} description="Sync to Dropbox" />
                      <ShortcutRow keys={['Ctrl', '\\']} description="Toggle Sidebar" />
                      <ShortcutRow keys={['Ctrl', '?']} description="Show Shortcuts" />
                      <ShortcutRow keys={['Alt', 'T']} description="Toggle Task List" />
