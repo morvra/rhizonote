@@ -1220,6 +1220,7 @@ export default function App() {
                 onRefactorLinks={handleRefactorLinks}
                 onCreateNoteWithContent={handleCreateSpecificNote}
                 fontSize={fontSize}
+                isActive={activePaneIndex === 0}
               />
             ) : (
                <EmptyState onCreate={handleCreateNote} />
@@ -1248,6 +1249,7 @@ export default function App() {
                         onRefactorLinks={handleRefactorLinks}
                         onCreateNoteWithContent={handleCreateSpecificNote}
                         fontSize={fontSize}
+                        isActive={activePaneIndex === 1}
                     />
                 ) : (
                     <EmptyState onCreate={handleCreateNote} />

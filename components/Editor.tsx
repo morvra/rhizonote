@@ -11,6 +11,7 @@ interface EditorProps {
   onRefactorLinks: (oldTitle: string, newTitle: string) => void;
   onCreateNoteWithContent?: (title: string, content: string) => void;
   fontSize: number;
+  isActive?: boolean;
 }
 
 // Helper to extract [[links]] from content, ignoring code blocks
@@ -87,7 +88,7 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, onLinkClick, currentNoteTitle
     );
 };
 
-const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, onRefactorLinks, onCreateNoteWithContent, fontSize }) => {
+const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, onRefactorLinks, onCreateNoteWithContent, fontSize, isActive = true }) => {
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -97,6 +98,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   // Toggle Mode Shortcut (Ctrl+E / Cmd+E)
   useEffect(() => {
     const handleWindowKeyDown = (e: KeyboardEvent) => {
+        if (!isActive) return;
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') {
             e.preventDefault();
             setMode(prev => prev === 'edit' ? 'preview' : 'edit');
@@ -104,7 +106,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     };
     window.addEventListener('keydown', handleWindowKeyDown);
     return () => window.removeEventListener('keydown', handleWindowKeyDown);
-  }, []);
+  }, [isActive]);
 
   // Track where the cursor *was* before the current interaction
   const prevSelectionRef = useRef<number>(0);
@@ -221,10 +223,10 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
   // Focus textarea when switching to edit mode
   useEffect(() => {
-    if (mode === 'edit' && textareaRef.current) {
+    if (mode === 'edit' && textareaRef.current && isActive) {
       textareaRef.current.focus();
     }
-  }, [mode]);
+  }, [mode, isActive]);
 
   // Restore cursor position immediately after DOM update to prevent jumping
   useLayoutEffect(() => {
@@ -893,12 +895,24 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         return `<div class="flex items-start gap-3 my-2 ${opacity}"><input type="checkbox" ${isChecked ? 'checked' : ''} data-task-index="${idx}" class="mt-1.5 rounded border-gray-400 dark:border-slate-600 bg-transparent transform scale-110 cursor-pointer pointer-events-auto"><span class="${decoration}">${content}</span></div>`;
     });
 
-    html = html.replace(/^\s*-\s+(.*$)/gm, '<li class="ml-4 list-disc text-slate-700 dark:text-slate-300 my-1">$1</li>');
-    html = html.replace(/^\s*(\d+)\.\s+(.*$)/gm, '<li class="ml-4 list-decimal text-slate-700 dark:text-slate-300 my-1">$2</li>');
+    // Lists Replacement with Wrapping
+    // Unordered
+    html = html.replace(/(?:^\s*-\s+.*(?:\r?\n|$))+/gm, (match) => {
+        // Replace individual list items
+        const items = match.replace(/^\s*-\s+(.*)(?:\r?\n|$)/gm, '<li class="ml-8 list-disc text-slate-700 dark:text-slate-300 my-1">$1</li>');
+        return `<ul class="my-4">${items}</ul>`;
+    });
+
+    // Ordered
+    html = html.replace(/(?:^\s*\d+\.\s+.*(?:\r?\n|$))+/gm, (match) => {
+        // Replace individual list items
+        const items = match.replace(/^\s*\d+\.\s+(.*)(?:\r?\n|$)/gm, '<li class="ml-8 list-decimal text-slate-700 dark:text-slate-300 my-1">$1</li>');
+        return `<ol class="my-4">${items}</ol>`;
+    });
 
     // Consume one newline immediately after block elements to prevent double spacing with the subsequent <br/>
-    // Blocks: h1-h6, li, blockquote, div (tasks)
-    html = html.replace(/(<\/(h[1-6]|li|blockquote|div)>)(\r\n|\n|\r)/g, '$1');
+    // Blocks: h1-h6, li, blockquote, div (tasks), ul, ol
+    html = html.replace(/(<\/(h[1-6]|li|blockquote|div|ul|ol)>)(\r\n|\n|\r)/g, '$1');
 
     // Convert all remaining newlines to line breaks to preserve formatting
     html = html.replace(/(\r\n|\n|\r)/g, '<br/>');
