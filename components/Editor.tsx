@@ -94,6 +94,18 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const backdropRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   
+  // Toggle Mode Shortcut (Ctrl+E / Cmd+E)
+  useEffect(() => {
+    const handleWindowKeyDown = (e: KeyboardEvent) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') {
+            e.preventDefault();
+            setMode(prev => prev === 'edit' ? 'preview' : 'edit');
+        }
+    };
+    window.addEventListener('keydown', handleWindowKeyDown);
+    return () => window.removeEventListener('keydown', handleWindowKeyDown);
+  }, []);
+
   // Track where the cursor *was* before the current interaction
   const prevSelectionRef = useRef<number>(0);
 
@@ -845,9 +857,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
   const renderMarkdown = (text: string) => {
     let html = text
-      .replace(/^# (.*$)/gm, '<h1 class="text-3xl font-bold mb-6 text-slate-800 dark:text-slate-100 border-b border-gray-200 dark:border-slate-700 pb-2">$1</h1>')
-      .replace(/^## (.*$)/gm, '<h2 class="text-2xl font-bold mb-4 mt-8 text-slate-700 dark:text-slate-200">$1</h2>')
-      .replace(/^### (.*$)/gm, '<h3 class="text-xl font-bold mb-3 mt-6 text-slate-600 dark:text-slate-300">$1</h3>');
+      .replace(/^# (.*$)/gm, '<h1 class="text-3xl font-bold mb-3 text-slate-800 dark:text-slate-100 border-b border-gray-200 dark:border-slate-700 pb-2">$1</h1>')
+      .replace(/^## (.*$)/gm, '<h2 class="text-2xl font-bold my-4 text-slate-700 dark:text-slate-200">$1</h2>')
+      .replace(/^### (.*$)/gm, '<h3 class="text-xl font-bold my-3 text-slate-600 dark:text-slate-300">$1</h3>');
     
     // Blockquote
     html = html.replace(/^> (.*$)/gm, '<blockquote class="border-l-4 border-indigo-500/50 pl-4 italic text-slate-600 dark:text-slate-400 my-4">$1</blockquote>');
@@ -884,7 +896,13 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     html = html.replace(/^\s*-\s+(.*$)/gm, '<li class="ml-4 list-disc text-slate-700 dark:text-slate-300 my-1">$1</li>');
     html = html.replace(/^\s*(\d+)\.\s+(.*$)/gm, '<li class="ml-4 list-decimal text-slate-700 dark:text-slate-300 my-1">$2</li>');
 
-    html = html.replace(/\n\n/g, '<br/><br/>');
+    // Consume one newline immediately after block elements to prevent double spacing with the subsequent <br/>
+    // Blocks: h1-h6, li, blockquote, div (tasks)
+    html = html.replace(/(<\/(h[1-6]|li|blockquote|div)>)(\r\n|\n|\r)/g, '$1');
+
+    // Convert all remaining newlines to line breaks to preserve formatting
+    html = html.replace(/(\r\n|\n|\r)/g, '<br/>');
+
     html = html.replace(
       /\[\[(.*?)\]\]/g, 
       (match, p1) => `<span class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 underline cursor-pointer wiki-link font-medium" data-link="${p1}">${match}</span>`
@@ -950,14 +968,14 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             <button
                 onClick={() => setMode('edit')}
                 className={`p-1.5 rounded transition-colors ${mode === 'edit' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
-                title="Edit Mode"
+                title="Edit Mode (Ctrl/Cmd + E)"
             >
                 <Edit3 size={16} />
             </button>
             <button
                 onClick={() => setMode('preview')}
                 className={`p-1.5 rounded transition-colors ${mode === 'preview' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
-                title="Reading Mode"
+                title="Reading Mode (Ctrl/Cmd + E)"
             >
                 <Eye size={16} />
             </button>

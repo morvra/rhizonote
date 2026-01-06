@@ -919,7 +919,7 @@ export default function App() {
             goForward();
         }
 
-        if (isMod && e.key.toLowerCase() === 'n') {
+        if (isMod && e.altKey && e.key.toLowerCase() === 'n') { // Ctrl + Alt + N
             e.preventDefault();
             handleCreateNote();
         }
@@ -1086,7 +1086,7 @@ export default function App() {
                 <button
                     onClick={handleCreateNote}
                     className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
-                    title="Create New Note (Ctrl/Cmd + N)"
+                    title="Create New Note (Ctrl/Cmd + Alt + N)"
                 >
                     <Plus size={18} />
                 </button>
@@ -1370,7 +1370,8 @@ export default function App() {
                     </button>
                 </div>
                 <div className="space-y-3">
-                     <ShortcutRow keys={['Ctrl', 'N']} description="Create New Note" />
+                     <ShortcutRow keys={['Ctrl', 'Alt', 'N']} description="Create New Note" />
+                     <ShortcutRow keys={['Ctrl', 'E']} description="Toggle Edit/Preview" />
                      <ShortcutRow keys={['Ctrl', 'D']} description="Open Daily Note" />
                      <ShortcutRow keys={['Ctrl', 'S']} description="Sync to Dropbox" />
                      <ShortcutRow keys={['Ctrl', '\\']} description="Toggle Sidebar" />
@@ -1531,7 +1532,7 @@ const EmptyState = ({ onCreate }: { onCreate: () => void }) => (
             onClick={onCreate}
             className="px-4 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded text-sm transition-colors"
         >
-            Create New Note (Ctrl/Cmd + N)
+            Create New Note (Ctrl/Cmd + Alt + N)
         </button>
     </div>
 );
