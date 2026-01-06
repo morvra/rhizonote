@@ -96,8 +96,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   
   // Track where the cursor *was* before the current interaction
   const prevSelectionRef = useRef<number>(0);
-  // Track cursor position specifically before mousedown to handle link clicks without moving cursor
-  const cursorBeforeClickRef = useRef<number>(0);
 
   // Track current cursor line to styling
   const [currentLineIndex, setCurrentLineIndex] = useState<number>(0);
@@ -238,70 +236,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
   const getLineNumber = (content: string, index: number) => {
     return content.substring(0, index).split('\n').length;
-  };
-
-  const detectLinkUnderCursor = (value: string, cursorPosition: number): { type: 'wiki' | 'url', content: string } | null => {
-    const lineStart = value.lastIndexOf('\n', cursorPosition - 1) + 1;
-    let lineEnd = value.indexOf('\n', cursorPosition);
-    if (lineEnd === -1) lineEnd = value.length;
-    
-    const lineText = value.slice(lineStart, lineEnd);
-    const relIndex = cursorPosition - lineStart;
-    
-    // Regex: Matches `code spans` OR ![image](url) OR [link](url) OR [[links]] OR raw-urls
-    // Note: The order matters. Image/Link syntax should be checked before raw urls.
-    const regex = /(`[^`]+`|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\[\[[^\]]+\]\]|https?:\/\/[^\s)]+)/g;
-    let match;
-    
-    while ((match = regex.exec(lineText)) !== null) {
-        const start = match.index;
-        const end = start + match[0].length;
-        
-        // Check if cursor is strictly inside the match
-        if (relIndex > start && relIndex <= end) {
-             const text = match[0];
-             if (text.startsWith('`')) return null; // It's code
-             
-             // Image ![alt](url)
-             if (text.startsWith('![')) {
-                 const urlMatch = text.match(/!\[([^\]]*)\]\(([^)]+)\)/);
-                 if (urlMatch) {
-                     // Structure: ![ (2) + alt + ]( (2) + url + ) (1)
-                     const altLen = urlMatch[1].length;
-                     const url = urlMatch[2];
-                     const urlStart = start + 2 + altLen + 2;
-                     const urlEnd = urlStart + url.length;
-                     
-                     if (relIndex >= urlStart && relIndex <= urlEnd) {
-                         return { type: 'url', content: url };
-                     }
-                     return null; // Cursor is in alt text or brackets, ignore
-                 }
-             }
-
-             // Markdown Link [text](url)
-             if (text.startsWith('[') && !text.startsWith('[[')) {
-                 const urlMatch = text.match(/\[([^\]]+)\]\(([^)]+)\)/);
-                 if (urlMatch) {
-                     // Structure: [ (1) + text + ]( (2) + url + ) (1)
-                     const textLen = urlMatch[1].length;
-                     const url = urlMatch[2];
-                     const urlStart = start + 1 + textLen + 2;
-                     const urlEnd = urlStart + url.length;
-
-                     if (relIndex >= urlStart && relIndex <= urlEnd) {
-                         return { type: 'url', content: url };
-                     }
-                     return null; // Cursor is in label or brackets, ignore
-                 }
-             }
-             
-             if (text.startsWith('[[')) return { type: 'wiki', content: text.slice(2, -2) }; // It's a wiki link
-             if (text.startsWith('http')) return { type: 'url', content: text }; // It's a URL
-        }
-    }
-
-    return null;
   };
 
   // Check if we should show autocomplete
@@ -473,10 +407,30 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     }
   };
 
-  const handleMouseDown = () => {
-      // Capture cursor position before any click changes it
+  const handleMouseDown = (e: React.MouseEvent<HTMLTextAreaElement>) => {
+      // 1. Intercept Link Clicks on the Backdrop
+      // We essentially "hit test" the backdrop element to see if we clicked a link.
+      // If we did, we prevent default (stopping the cursor move/focus change) and open the link.
       if (textareaRef.current) {
-          cursorBeforeClickRef.current = textareaRef.current.selectionStart;
+          // Temporarily disable pointer events on textarea to look through it
+          textareaRef.current.style.pointerEvents = 'none';
+          const el = document.elementFromPoint(e.clientX, e.clientY);
+          textareaRef.current.style.pointerEvents = 'auto';
+
+          if (el) {
+              const url = el.getAttribute('data-url');
+              const wikiLink = el.getAttribute('data-link-title');
+
+              if (url || wikiLink) {
+                  e.preventDefault(); // This stops the cursor from moving
+                  if (url) window.open(url, '_blank');
+                  if (wikiLink) onLinkClick(wikiLink);
+                  return;
+              }
+          }
+
+          // If no link, capture cursor position normally
+          prevSelectionRef.current = textareaRef.current.selectionStart;
       }
   };
 
@@ -550,7 +504,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     const currentClickIndex = target.selectionStart;
     const content = note.content;
     const clickedLineNumber = getLineNumber(content, currentClickIndex);
-    const prevLineNumber = getLineNumber(content, prevSelectionRef.current);
 
     // PRIORITY 1: CHECKBOX TOGGLE
     const lineStart = content.lastIndexOf('\n', currentClickIndex - 1) + 1;
@@ -579,24 +532,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         }
     }
 
-    // PRIORITY 2: LINK NAVIGATION
-    // Only navigate if we are NOT selecting text
-    if (target.selectionStart === target.selectionEnd) {
-         const detected = detectLinkUnderCursor(content, currentClickIndex);
-         if (detected) {
-             e.preventDefault(); // Stop click propagation to allow restoration
-             // Restore cursor to where it was before mousedown
-             target.setSelectionRange(cursorBeforeClickRef.current, cursorBeforeClickRef.current);
-
-             if (detected.type === 'wiki') {
-                 onLinkClick(detected.content);
-             } else if (detected.type === 'url') {
-                 window.open(detected.content, '_blank');
-             }
-             updateLineTracking();
-             return; 
-         }
-    }
+    // PRIORITY 2: LINK NAVIGATION (REMOVED)
+    // Handled in handleMouseDown to prevent cursor movement.
     
     updateLineTracking();
     checkAutocomplete(currentClickIndex, content);
