@@ -356,6 +356,13 @@ export default function App() {
       setTimeout(() => { if(syncStatus !== 'error') setSyncStatus('idle'); }, 4000);
   };
 
+  // Auto-sync on load
+  useEffect(() => {
+      if (dropboxToken) {
+          handleSync();
+      }
+  }, []);
+
   // Extract all tasks from all notes (Memoized)
   const allTasks = useMemo<NoteTasks[]>(() => {
       const result: NoteTasks[] = [];

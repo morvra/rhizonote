@@ -781,9 +781,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                         const text = match[1];
                         const url = match[2];
                         return (
-                            <span key={i} className="text-indigo-600 dark:text-indigo-400">
+                            <span key={i} className="text-blue-600 dark:text-blue-400">
                                 {'['}
-                                <span className="text-indigo-600 dark:text-indigo-400">{text}</span>
+                                <span className="text-blue-600 dark:text-blue-400">{text}</span>
                                 {']('}
                                 <span 
                                     className={`${isActive ? '' : 'underline cursor-pointer pointer-events-auto'} z-10 relative`}
@@ -796,7 +796,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                             </span>
                         );
                     }
-                    return <span key={i} className="text-indigo-600 dark:text-indigo-400">{part}</span>;
+                    return <span key={i} className="text-blue-600 dark:text-blue-400">{part}</span>;
                  }
                  if (part.startsWith('[[') && part.endsWith(']]')) {
                      const title = part.slice(2, -2);
@@ -861,10 +861,13 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="max-w-full h-auto rounded-lg shadow-sm my-4" />');
 
     // Links [text](url)
-    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-indigo-600 dark:text-indigo-400 hover:underline">$1</a>');
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">$1</a>');
     
     // Auto-link <url>
-    html = html.replace(/<(https?:\/\/[^>]+)>/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-indigo-600 dark:text-indigo-400 hover:underline">$1</a>');
+    html = html.replace(/<(https?:\/\/[^>]+)>/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">$1</a>');
+
+    // Auto-link Raw URLs (not inside quotes or other tags)
+    html = html.replace(/(^|[^"'])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">$2</a>');
 
     // Interactive Tasks (Place BEFORE lists to prevent tasks being consumed by list regex)
     let taskIndex = 0;
