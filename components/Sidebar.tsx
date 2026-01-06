@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Note, Folder, SortField, SortDirection } from '../types';
-import { FileText, Bookmark, Plus, Search, Trash2, Folder as FolderIcon, FolderOpen, ChevronRight, ChevronDown, Settings, Edit2 } from 'lucide-react';
+import { FileText, Bookmark, Plus, Search, Trash2, Folder as FolderIcon, FolderOpen, ChevronRight, ChevronDown, Settings, Edit2, RotateCcw, AlertTriangle } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -25,6 +25,10 @@ interface SidebarProps {
   onOpenSettings: () => void;
   expandedFolderIds: string[];
   onToggleFolderExpand: (folderId: string) => void;
+  onRestoreNote: (id: string) => void;
+  onRestoreFolder: (id: string) => void;
+  onPermanentDeleteNote: (id: string) => void;
+  onPermanentDeleteFolder: (id: string) => void;
 }
 
 interface NoteItemProps {
@@ -34,6 +38,9 @@ interface NoteItemProps {
   onToggleBookmark: (id: string) => void;
   onDelete: (id: string) => void;
   onNoteDrop?: (sourceId: string, targetId: string) => void;
+  isTrash?: boolean;
+  onRestore?: (id: string) => void;
+  onPermanentDelete?: (id: string) => void;
 }
 
 const NoteItem: React.FC<NoteItemProps> = ({
@@ -42,7 +49,10 @@ const NoteItem: React.FC<NoteItemProps> = ({
   onSelect,
   onToggleBookmark,
   onDelete,
-  onNoteDrop
+  onNoteDrop,
+  isTrash,
+  onRestore,
+  onPermanentDelete
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -53,7 +63,7 @@ const NoteItem: React.FC<NoteItemProps> = ({
   };
 
   const handleDragOver = (e: React.DragEvent) => {
-    if (onNoteDrop) {
+    if (onNoteDrop && !isTrash) {
         e.preventDefault();
         setIsDragOver(true);
     }
@@ -65,7 +75,7 @@ const NoteItem: React.FC<NoteItemProps> = ({
   };
 
   const handleDrop = (e: React.DragEvent) => {
-    if (onNoteDrop) {
+    if (onNoteDrop && !isTrash) {
         e.preventDefault();
         setIsDragOver(false);
         const sourceId = e.dataTransfer.getData('noteId');
@@ -78,7 +88,7 @@ const NoteItem: React.FC<NoteItemProps> = ({
 
   return (
     <div
-      draggable
+      draggable={!isTrash}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -88,35 +98,62 @@ const NoteItem: React.FC<NoteItemProps> = ({
           ? 'bg-indigo-100 dark:bg-indigo-600/20 text-indigo-700 dark:text-indigo-300 border-l-2 border-indigo-500'
           : 'text-slate-600 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200 border-l-2 border-transparent'
       } ${isDragOver ? 'ring-2 ring-indigo-400 dark:ring-indigo-500' : ''}`}
-      onClick={() => onSelect(note.id)}
+      onClick={() => !isTrash && onSelect(note.id)}
     >
       <div className="flex items-center gap-2 truncate flex-1">
         <FileText className="w-4 h-4 md:w-[13px] md:h-[13px] text-slate-400 dark:text-slate-500" />
-        <span className="text-sm md:text-xs truncate font-medium">{note.title || 'Untitled'}</span>
+        <span className={`text-sm md:text-xs truncate font-medium ${isTrash ? 'line-through text-slate-400' : ''}`}>{note.title || 'Untitled'}</span>
       </div>
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleBookmark(note.id);
-          }}
-          onMouseDown={(e) => e.stopPropagation()} 
-          className={`p-0.5 rounded hover:bg-gray-300 dark:hover:bg-slate-700 ${note.isBookmarked ? 'text-yellow-600 dark:text-yellow-500' : 'text-slate-400 dark:text-slate-500'}`}
-          title={note.isBookmarked ? 'Remove Bookmark' : 'Bookmark'}
-        >
-          <Bookmark size={11} fill={note.isBookmarked ? 'currentColor' : 'none'} />
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(note.id);
-          }}
-          onMouseDown={(e) => e.stopPropagation()} 
-          className="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/50 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400"
-          title="Delete"
-        >
-          <Trash2 size={11} />
-        </button>
+        {!isTrash ? (
+            <>
+                <button
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleBookmark(note.id);
+                }}
+                onMouseDown={(e) => e.stopPropagation()} 
+                className={`p-0.5 rounded hover:bg-gray-300 dark:hover:bg-slate-700 ${note.isBookmarked ? 'text-yellow-600 dark:text-yellow-500' : 'text-slate-400 dark:text-slate-500'}`}
+                title={note.isBookmarked ? 'Remove Bookmark' : 'Bookmark'}
+                >
+                <Bookmark size={11} fill={note.isBookmarked ? 'currentColor' : 'none'} />
+                </button>
+                <button
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(note.id);
+                }}
+                onMouseDown={(e) => e.stopPropagation()} 
+                className="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/50 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400"
+                title="Move to Trash"
+                >
+                <Trash2 size={11} />
+                </button>
+            </>
+        ) : (
+            <>
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onRestore && onRestore(note.id);
+                    }}
+                    className="p-0.5 rounded hover:bg-green-100 dark:hover:bg-green-900/50 text-slate-400 hover:text-green-600 dark:hover:text-green-400"
+                    title="Restore Note"
+                >
+                    <RotateCcw size={11} />
+                </button>
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onPermanentDelete && onPermanentDelete(note.id);
+                    }}
+                    className="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/50 text-slate-400 hover:text-red-600 dark:hover:text-red-400"
+                    title="Delete Permanently"
+                >
+                    <AlertTriangle size={11} />
+                </button>
+            </>
+        )}
       </div>
     </div>
   );
@@ -263,7 +300,7 @@ const FolderItem: React.FC<{
               }}
               onMouseDown={(e) => e.stopPropagation()}
               className="p-0.5 hover:text-red-500 dark:hover:text-red-400"
-              title="Delete Folder"
+              title="Move to Trash"
             >
                <Trash2 size={11} />
             </button>
@@ -350,11 +387,22 @@ const Sidebar: React.FC<SidebarProps> = ({
   width,
   onOpenSettings,
   expandedFolderIds,
-  onToggleFolderExpand
+  onToggleFolderExpand,
+  onRestoreNote,
+  onRestoreFolder,
+  onPermanentDeleteNote,
+  onPermanentDeleteFolder
 }) => {
   const [search, setSearch] = React.useState('');
+  const [trashOpen, setTrashOpen] = React.useState(false);
 
-  const filteredNotes = notes.filter(
+  // Split Active and Trashed
+  const activeNotes = notes.filter(n => !n.deletedAt);
+  const trashedNotes = notes.filter(n => n.deletedAt);
+  const activeFolders = folders.filter(f => !f.deletedAt);
+  const trashedFolders = folders.filter(f => f.deletedAt);
+
+  const filteredNotes = activeNotes.filter(
     (n) =>
       n.title.toLowerCase().includes(search.toLowerCase()) ||
       n.content.toLowerCase().includes(search.toLowerCase())
@@ -366,7 +414,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   
   const isSearching = search.length > 0;
 
-  const rootFolders = folders.filter(f => f.parentId === null);
+  const rootFolders = activeFolders.filter(f => f.parentId === null);
   const rootNotes = filteredNotes.filter(n => !n.folderId);
   
   // Folders are always sorted by name (asc)
@@ -493,8 +541,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                         <FolderItem
                             key={folder.id}
                             folder={folder}
-                            allFolders={folders}
-                            allNotes={filteredNotes} 
+                            allFolders={activeFolders} // Pass only active folders
+                            allNotes={activeNotes} // Pass only active notes
                             activeNoteId={activeNoteId}
                             onSelectNote={onSelectNote}
                             onToggleBookmark={onToggleBookmark}
@@ -524,12 +572,57 @@ const Sidebar: React.FC<SidebarProps> = ({
                         />
                     ))}
 
-                    {filteredNotes.length === 0 && folders.length === 0 && (
+                    {filteredNotes.length === 0 && activeFolders.length === 0 && (
                     <div className="px-3 py-4 text-center text-slate-500 dark:text-slate-600 text-sm">No notes found</div>
                     )}
                 </div>
             )}
             
+            {/* Trash Section */}
+            {(trashedNotes.length > 0 || trashedFolders.length > 0) && (
+                <div className="mt-8 pt-4 border-t border-gray-200 dark:border-slate-800">
+                    <div 
+                        className="flex items-center gap-2 px-3 py-1 cursor-pointer text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
+                        onClick={() => setTrashOpen(!trashOpen)}
+                    >
+                        <Trash2 size={12} />
+                        <span className="text-xs font-semibold uppercase tracking-wider">Trash ({trashedNotes.length + trashedFolders.length})</span>
+                        {trashOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    </div>
+                    
+                    {trashOpen && (
+                        <div className="mt-2 pl-2 border-l border-red-200 dark:border-red-900/30 ml-2">
+                             <div className="mb-2 text-[10px] text-slate-400 px-2 italic">Items are deleted after 30 days</div>
+                            {trashedFolders.map(folder => (
+                                <div key={folder.id} className="group flex items-center justify-between px-2 py-1 text-slate-500 dark:text-slate-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded">
+                                    <div className="flex items-center gap-2 truncate">
+                                        <FolderIcon size={12} />
+                                        <span className="text-xs line-through truncate">{folder.name}</span>
+                                    </div>
+                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                                        <button onClick={() => onRestoreFolder(folder.id)} title="Restore" className="p-0.5 hover:text-green-600"><RotateCcw size={11}/></button>
+                                        <button onClick={() => onPermanentDeleteFolder(folder.id)} title="Delete Forever" className="p-0.5 hover:text-red-600"><AlertTriangle size={11}/></button>
+                                    </div>
+                                </div>
+                            ))}
+                            {trashedNotes.map(note => (
+                                <NoteItem
+                                    key={note.id}
+                                    note={note}
+                                    activeNoteId={null}
+                                    onSelect={() => {}}
+                                    onToggleBookmark={() => {}}
+                                    onDelete={() => {}}
+                                    isTrash={true}
+                                    onRestore={onRestoreNote}
+                                    onPermanentDelete={onPermanentDeleteNote}
+                                />
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
             <div className="h-16"></div>
             </div>
         </div>

@@ -8,6 +8,7 @@ export interface Folder {
   name: string;
   parentId: string | null;
   createdAt: number;
+  deletedAt?: number;
 }
 
 export interface Note {
@@ -20,6 +21,7 @@ export interface Note {
   createdAt: number;
   isGhost?: boolean;
   bookmarkOrder?: number;
+  deletedAt?: number;
 }
 
 export type PaneId = 'left' | 'right';

@@ -7,6 +7,7 @@ import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Moni
 import { getDropboxAuthUrl, parseAuthTokenFromUrl, syncDropboxData, getNotePath, getFolderPath, RenameOperation } from './utils/dropboxService';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 // Local Storage Keys
 const LS_KEY_NOTES = 'rhizonote_notes';
@@ -268,6 +269,39 @@ export default function App() {
       localStorage.setItem(LS_KEY_DAILY_PREFS, JSON.stringify(prefs));
   }, [dailyNoteFormat, dailyNoteFolderId, dailyNoteTemplate]);
 
+  // Cleanup expired trash on mount
+  useEffect(() => {
+      cleanupExpiredTrash();
+  }, []); // Run once on mount
+
+  const cleanupExpiredTrash = () => {
+      const now = Date.now();
+      
+      // Find expired items
+      const expiredNotes = notes.filter(n => n.deletedAt && (now - n.deletedAt > THIRTY_DAYS_MS));
+      const expiredFolders = folders.filter(f => f.deletedAt && (now - f.deletedAt > THIRTY_DAYS_MS));
+
+      if (expiredNotes.length === 0 && expiredFolders.length === 0) return;
+
+      const newDeletedPaths = [...deletedPaths];
+
+      // Queue paths for permanent deletion
+      expiredNotes.forEach(n => {
+          newDeletedPaths.push(getNotePath(n.title, n.folderId, folders));
+      });
+      expiredFolders.forEach(f => {
+          newDeletedPaths.push(getFolderPath(f.id, folders));
+      });
+
+      setDeletedPaths(newDeletedPaths);
+
+      // Remove from state
+      setNotes(prev => prev.filter(n => !n.deletedAt || (now - n.deletedAt <= THIRTY_DAYS_MS)));
+      setFolders(prev => prev.filter(f => !f.deletedAt || (now - f.deletedAt <= THIRTY_DAYS_MS)));
+
+      console.log(`Cleaned up ${expiredNotes.length} notes and ${expiredFolders.length} folders from trash.`);
+  };
+
   // Dropbox Auth Check
   useEffect(() => {
       const token = parseAuthTokenFromUrl();
@@ -325,7 +359,8 @@ export default function App() {
   // Extract all tasks from all notes (Memoized)
   const allTasks = useMemo<NoteTasks[]>(() => {
       const result: NoteTasks[] = [];
-      notes.forEach(note => {
+      // Only show tasks from non-deleted notes
+      notes.filter(n => !n.deletedAt).forEach(note => {
           const noteTasks: ExtractedTask[] = [];
           note.content.split('\n').forEach((line, idx) => {
               const match = line.match(/^(\s*)(-\s\[([ x])\]\s)(.*)/);
@@ -406,7 +441,7 @@ export default function App() {
   const handleOpenDailyNote = () => {
     const todayTitle = formatDate(new Date(), dailyNoteFormat);
     const targetFolderId = dailyNoteFolderId && folders.find(f => f.id === dailyNoteFolderId) ? dailyNoteFolderId : null;
-    const existingNote = notes.find(n => n.title === todayTitle && n.folderId === targetFolderId);
+    const existingNote = notes.find(n => n.title === todayTitle && n.folderId === targetFolderId && !n.deletedAt);
 
     if (existingNote) {
         openNote(existingNote.id);
@@ -489,57 +524,98 @@ export default function App() {
       return ids;
   };
 
+  // Modified to "Soft Delete" (Move to Trash)
   const handleDeleteFolder = (id: string) => {
     const folder = folders.find(f => f.id === id);
     const name = folder ? folder.name : 'this folder';
     
     setConfirmModal({
         isOpen: true,
-        message: `Delete folder "${name}" and all its contents?`,
+        message: `Move folder "${name}" and its contents to trash?`,
         onConfirm: () => {
-            // Queue folder path for deletion
-            if (folder) {
-                const path = getFolderPath(id, folders);
-                setDeletedPaths(prev => [...prev, path]);
-            }
+            const now = Date.now();
+            const descendantIds = getDescendantFolderIds(id, folders);
+            const allAffectedFolderIds = [id, ...descendantIds];
 
-            const idsToDelete = [id, ...getDescendantFolderIds(id, folders)];
-            setFolders((prev: Folder[]) => prev.filter(f => !idsToDelete.includes(f.id)));
-            setNotes((prev: Note[]) => prev.filter(n => !n.folderId || !idsToDelete.includes(n.folderId)));
+            setFolders(prev => prev.map(f => 
+                allAffectedFolderIds.includes(f.id) ? { ...f, deletedAt: now } : f
+            ));
             
-            setExpandedFolderIds((prev: string[]) => prev.filter(eid => !idsToDelete.includes(eid)));
+            setNotes(prev => prev.map(n => 
+                (n.folderId && allAffectedFolderIds.includes(n.folderId)) ? { ...n, deletedAt: now, updatedAt: now } : n
+            ));
 
-            if (dailyNoteFolderId === id) {
-                setDailyNoteFolderId('');
-            }
-            
-            const allNotes = notes; 
-            const deletedNoteIds = allNotes
-                .filter(n => n.folderId && idsToDelete.includes(n.folderId))
+            // Close affected panes
+            const deletedNoteIds = notes
+                .filter(n => n.folderId && allAffectedFolderIds.includes(n.folderId))
                 .map(n => n.id);
-            setPanes((prev: (string | null)[]) => prev.map(pid => (pid && deletedNoteIds.includes(pid)) ? null : pid));
-            
+            setPanes(prev => prev.map(pid => (pid && deletedNoteIds.includes(pid)) ? null : pid));
+
             setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} });
         }
     });
   };
 
+  // Modified to "Soft Delete" (Move to Trash)
   const handleDeleteNote = (id: string) => {
     const noteToDelete = notes.find(n => n.id === id);
     setConfirmModal({
         isOpen: true,
-        message: 'Are you sure you want to delete this note?',
+        message: 'Move this note to trash?',
         onConfirm: () => {
-            if (noteToDelete) {
-                // Queue for deletion on sync
-                const path = getNotePath(noteToDelete.title, noteToDelete.folderId, folders);
-                setDeletedPaths(prev => [...prev, path]);
-            }
-            setNotes((prev: Note[]) => prev.filter((n) => n.id !== id));
-            setPanes((prev: (string | null)[]) => prev.map(paneId => paneId === id ? null : paneId));
+            const now = Date.now();
+            setNotes(prev => prev.map(n => n.id === id ? { ...n, deletedAt: now, updatedAt: now } : n));
+            setPanes(prev => prev.map(paneId => paneId === id ? null : paneId));
             setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} });
         }
     });
+  };
+
+  const handlePermanentDeleteFolder = (id: string) => {
+      const descendantIds = getDescendantFolderIds(id, folders);
+      const allAffectedFolderIds = [id, ...descendantIds];
+      
+      // Queue for deletion
+      const newDeletedPaths = [...deletedPaths];
+      allAffectedFolderIds.forEach(fid => {
+           newDeletedPaths.push(getFolderPath(fid, folders));
+      });
+      // Notes in these folders are also implicitly deleted on Dropbox if the parent folder is deleted,
+      // but explicitly adding them is safer if the structure flattened somehow, though for folder deletion simply deleting the root folder path is usually enough.
+      // However, to keep state clean, let's just delete the top folder path.
+      // Wait, getFolderPath depends on state. We must calculate path BEFORE removing from state.
+      const topPath = getFolderPath(id, folders);
+      setDeletedPaths(prev => [...prev, topPath]);
+      
+      setFolders(prev => prev.filter(f => !allAffectedFolderIds.includes(f.id)));
+      setNotes(prev => prev.filter(n => !n.folderId || !allAffectedFolderIds.includes(n.folderId)));
+  };
+
+  const handlePermanentDeleteNote = (id: string) => {
+      const note = notes.find(n => n.id === id);
+      if (note) {
+          const path = getNotePath(note.title, note.folderId, folders);
+          setDeletedPaths(prev => [...prev, path]);
+          setNotes(prev => prev.filter(n => n.id !== id));
+      }
+  };
+
+  const handleRestoreNote = (id: string) => {
+      setNotes(prev => prev.map(n => n.id === id ? { ...n, deletedAt: undefined, updatedAt: Date.now() } : n));
+  };
+
+  const handleRestoreFolder = (id: string) => {
+      // Restore folder and all its contents
+      const descendantIds = getDescendantFolderIds(id, folders);
+      const allAffectedFolderIds = [id, ...descendantIds];
+
+      setFolders(prev => prev.map(f => 
+        allAffectedFolderIds.includes(f.id) ? { ...f, deletedAt: undefined } : f
+      ));
+      
+      setNotes(prev => prev.map(n => 
+        (n.folderId && allAffectedFolderIds.includes(n.folderId)) ? { ...n, deletedAt: undefined, updatedAt: Date.now() } : n
+      ));
   };
 
   const handleToggleBookmark = (id: string) => {
@@ -734,7 +810,7 @@ export default function App() {
   };
 
   const handleLinkClick = (title: string) => {
-    const targetNote = notes.find(n => n.title.toLowerCase() === title.toLowerCase());
+    const targetNote = notes.find(n => n.title.toLowerCase() === title.toLowerCase() && !n.deletedAt);
     if (targetNote) {
       openNote(targetNote.id);
     } else {
@@ -931,6 +1007,10 @@ export default function App() {
         onOpenSettings={() => setShowSettings(true)}
         expandedFolderIds={expandedFolderIds}
         onToggleFolderExpand={handleToggleFolderExpand}
+        onRestoreNote={handleRestoreNote}
+        onRestoreFolder={handleRestoreFolder}
+        onPermanentDeleteNote={handlePermanentDeleteNote}
+        onPermanentDeleteFolder={handlePermanentDeleteFolder}
       />
 
       {sidebarVisible && (
@@ -940,8 +1020,10 @@ export default function App() {
         />
       )}
 
+      {/* ... Rest of the component (Main Content) ... */}
       <div className="flex-1 flex flex-col h-full min-w-0">
         <div className="h-10 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between px-4 bg-gray-50 dark:bg-slate-900 gap-2 shrink-0 transition-colors duration-200">
+            {/* ... Toolbar ... */}
             <div className="flex items-center gap-2">
                 <button
                     onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -1103,6 +1185,7 @@ export default function App() {
 
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* ... Settings Modal Content (Unchanged) ... */}
             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowSettings(false)}></div>
             <div className="relative bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto p-6 space-y-6">
                 <div className="flex items-center justify-between border-b border-gray-200 dark:border-slate-800 pb-4">
@@ -1111,7 +1194,7 @@ export default function App() {
                         <X size={20} />
                     </button>
                 </div>
-
+                {/* ... other settings ... */}
                 <div className="space-y-3">
                     <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-slate-300">
                         <ArrowDownAz size={16} />
@@ -1202,7 +1285,7 @@ export default function App() {
                             className="w-full bg-gray-100 dark:bg-slate-950 text-slate-800 dark:text-slate-200 rounded p-2 text-sm border border-gray-300 dark:border-slate-800 focus:border-indigo-500 focus:outline-none appearance-none"
                         >
                             <option value="">Root (No Folder)</option>
-                            {folders.map(f => (
+                            {folders.filter(f => !f.deletedAt).map(f => (
                                 <option key={f.id} value={f.id}>{f.name}</option>
                             ))}
                         </select>
@@ -1266,6 +1349,7 @@ export default function App() {
 
       {showShortcuts && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+           {/* ... Shortcuts Modal (Unchanged) ... */}
            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowShortcuts(false)}></div>
            <div className="relative bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-2xl w-full max-w-md p-6">
                 <div className="flex items-center justify-between border-b border-gray-200 dark:border-slate-800 pb-4 mb-4">
@@ -1295,6 +1379,7 @@ export default function App() {
       
       {showTasks && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+             {/* ... Task List (Unchanged) ... */}
              <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={handleCloseTasks}></div>
              <div className="relative bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
                  <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-800 shrink-0">

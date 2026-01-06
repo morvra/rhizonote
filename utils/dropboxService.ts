@@ -257,6 +257,7 @@ export const syncDropboxData = async (
                     isBookmarked: !!metadata.isBookmarked,
                     createdAt: metadata.created || Date.now(),
                     updatedAt: new Date(entry.client_modified).getTime(),
+                    deletedAt: metadata.deletedAt, // Parse deletedAt
                 };
                 
                 const existingIdx = mergedNotes.findIndex(n => n.id === newNoteObj.id);
@@ -284,12 +285,15 @@ export const syncDropboxData = async (
     for (const batch of ulChunks) {
         await Promise.all(batch.map(async (note) => {
             const path = getNotePath(note.title, note.folderId, mergedFolders);
+            
+            // Include deletedAt in frontmatter
             const fileContent = `---
 id: ${note.id}
 title: ${note.title}
 created: ${note.createdAt}
 updated: ${note.updatedAt}
 isBookmarked: ${note.isBookmarked || false}
+${note.deletedAt ? `deletedAt: ${note.deletedAt}` : ''}
 ---
 ${note.content}`;
             const blob = new Blob([fileContent], { type: 'text/markdown' });
