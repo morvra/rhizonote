@@ -305,6 +305,9 @@ export default function App() {
       console.log(`Cleaned up ${expiredNotes.length} notes and ${expiredFolders.length} folders from trash.`);
   };
 
+  // Guard against double firing in strict mode
+  const authCodeProcessed = useRef(false);
+
   // Dropbox Auth Check & Code Handling
   useEffect(() => {
       const handleAuth = async () => {
@@ -313,6 +316,9 @@ export default function App() {
           const code = urlParams.get('code');
           
           if (code) {
+              if (authCodeProcessed.current) return;
+              authCodeProcessed.current = true;
+
               setSyncStatus('syncing');
               setSyncMessage('Completing login...');
               setShowSettings(true);
@@ -337,10 +343,10 @@ export default function App() {
                   setSyncStatus('success');
                   setSyncMessage('Dropbox connected successfully!');
                   setTimeout(() => setSyncStatus('idle'), 3000);
-              } catch (e) {
+              } catch (e: any) {
                   console.error('Failed to exchange token', e);
                   setSyncStatus('error');
-                  setSyncMessage('Login failed. Please try again.');
+                  setSyncMessage(`Login failed: ${e.message || 'Unknown error'}`);
               }
               return;
           }
