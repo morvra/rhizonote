@@ -96,6 +96,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   
   // Track where the cursor *was* before the current interaction
   const prevSelectionRef = useRef<number>(0);
+  // Track cursor position specifically before mousedown to handle link clicks without moving cursor
+  const cursorBeforeClickRef = useRef<number>(0);
+
   // Track current cursor line to styling
   const [currentLineIndex, setCurrentLineIndex] = useState<number>(0);
   
@@ -470,6 +473,13 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     }
   };
 
+  const handleMouseDown = () => {
+      // Capture cursor position before any click changes it
+      if (textareaRef.current) {
+          cursorBeforeClickRef.current = textareaRef.current.selectionStart;
+      }
+  };
+
   const handleMouseUp = () => {
     updateSelectionMenu();
     // Only update visual line index, don't update logical selection history
@@ -572,18 +582,20 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     // PRIORITY 2: LINK NAVIGATION
     // Only navigate if we are NOT selecting text
     if (target.selectionStart === target.selectionEnd) {
-        if (clickedLineNumber !== prevLineNumber) {
-             const detected = detectLinkUnderCursor(content, currentClickIndex);
-             if (detected) {
-                 if (detected.type === 'wiki') {
-                     onLinkClick(detected.content);
-                 } else if (detected.type === 'url') {
-                     window.open(detected.content, '_blank');
-                 }
-                 updateLineTracking(); // Update history so subsequent clicks know we are here
-                 return; 
+         const detected = detectLinkUnderCursor(content, currentClickIndex);
+         if (detected) {
+             e.preventDefault(); // Stop click propagation to allow restoration
+             // Restore cursor to where it was before mousedown
+             target.setSelectionRange(cursorBeforeClickRef.current, cursorBeforeClickRef.current);
+
+             if (detected.type === 'wiki') {
+                 onLinkClick(detected.content);
+             } else if (detected.type === 'url') {
+                 window.open(detected.content, '_blank');
              }
-        }
+             updateLineTracking();
+             return; 
+         }
     }
     
     updateLineTracking();
@@ -611,6 +623,92 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                  onUpdate(note.id, { content: newValue });
                  setSelectionMenu(null); 
             }
+        }
+        return;
+    }
+    
+    const target = e.currentTarget;
+
+    // Line Moving: Ctrl/Cmd + Arrow Up/Down
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault();
+        const start = target.selectionStart;
+        const value = target.value;
+        const lines = value.split('\n');
+        
+        // Find line index of cursor
+        const textBefore = value.substring(0, start);
+        const currentLineIndex = textBefore.split('\n').length - 1;
+
+        // Calculate offset from start of line
+        const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+        const offset = start - lineStart;
+
+        if (e.key === 'ArrowUp' && currentLineIndex > 0) {
+            // Swap with previous
+            const temp = lines[currentLineIndex];
+            lines[currentLineIndex] = lines[currentLineIndex - 1];
+            lines[currentLineIndex - 1] = temp;
+            
+            // Reconstruct content
+            const newContent = lines.join('\n');
+            onUpdate(note.id, { content: newContent });
+            
+            // Calculate new cursor position
+            // The moved line is now at index-1. 
+            // We find the start position of that line in the new text.
+            const prefix = lines.slice(0, currentLineIndex - 1).join('\n');
+            const newStart = prefix.length > 0 ? prefix.length + 1 : 0;
+            // Ensure we don't go out of bounds if offset is somehow larger (shouldn't happen with same content)
+            pendingCursorRef.current = newStart + offset;
+        } 
+        else if (e.key === 'ArrowDown' && currentLineIndex < lines.length - 1) {
+             // Swap with next
+             const temp = lines[currentLineIndex];
+             lines[currentLineIndex] = lines[currentLineIndex + 1];
+             lines[currentLineIndex + 1] = temp;
+             
+             const newContent = lines.join('\n');
+             onUpdate(note.id, { content: newContent });
+             
+             // The moved line is now at index+1.
+             const prefix = lines.slice(0, currentLineIndex + 1).join('\n');
+             const newStart = prefix.length + 1;
+             pendingCursorRef.current = newStart + offset;
+        }
+        return;
+    }
+
+    // Indentation: Tab / Shift+Tab
+    if (e.key === 'Tab') {
+        e.preventDefault();
+        const start = target.selectionStart;
+        const value = target.value;
+        
+        // Find line start
+        const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+
+        if (e.shiftKey) {
+            // Outdent: Remove 2 spaces if present
+            const lineEnd = value.indexOf('\n', start);
+            const currentLine = value.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
+            
+            if (currentLine.startsWith('  ')) {
+                const newValue = value.slice(0, lineStart) + value.slice(lineStart + 2);
+                onUpdate(note.id, { content: newValue });
+                // Move cursor back 2 chars, stopping at line start
+                pendingCursorRef.current = Math.max(lineStart, start - 2);
+            } else if (currentLine.startsWith('\t')) {
+                 const newValue = value.slice(0, lineStart) + value.slice(lineStart + 1);
+                 onUpdate(note.id, { content: newValue });
+                 pendingCursorRef.current = Math.max(lineStart, start - 1);
+            }
+        } else {
+            // Indent: Add 2 spaces at start of line
+            const newValue = value.slice(0, lineStart) + '  ' + value.slice(lineStart);
+            onUpdate(note.id, { content: newValue });
+            // Move cursor forward 2 chars
+            pendingCursorRef.current = start + 2;
         }
         return;
     }
@@ -808,6 +906,10 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       .replace(/^# (.*$)/gm, '<h1 class="text-3xl font-bold mb-6 text-slate-800 dark:text-slate-100 border-b border-gray-200 dark:border-slate-700 pb-2">$1</h1>')
       .replace(/^## (.*$)/gm, '<h2 class="text-2xl font-bold mb-4 mt-8 text-slate-700 dark:text-slate-200">$1</h2>')
       .replace(/^### (.*$)/gm, '<h3 class="text-xl font-bold mb-3 mt-6 text-slate-600 dark:text-slate-300">$1</h3>');
+    
+    // Blockquote
+    html = html.replace(/^> (.*$)/gm, '<blockquote class="border-l-4 border-indigo-500/50 pl-4 italic text-slate-600 dark:text-slate-400 my-4">$1</blockquote>');
+
     html = html
       .replace(/(`[^`]+`)/g, '<code class="bg-gray-100 dark:bg-slate-800 px-1 py-0.5 rounded text-amber-700 dark:text-amber-200 text-sm font-mono">$1</code>')
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -955,6 +1057,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 value={note.content}
                 onChange={handleChange}
                 onClick={handleContentClick}
+                onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseLeave={() => { if(textareaRef.current) textareaRef.current.style.cursor = 'text'; }}
                 onMouseUp={handleMouseUp}
