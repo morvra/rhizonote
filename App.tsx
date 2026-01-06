@@ -559,9 +559,10 @@ export default function App() {
   // Modified to "Soft Delete" (Move to Trash)
   const handleDeleteNote = (id: string) => {
     const noteToDelete = notes.find(n => n.id === id);
+    const title = noteToDelete ? noteToDelete.title : 'this note';
     setConfirmModal({
         isOpen: true,
-        message: 'Move this note to trash?',
+        message: `Move note "${title}" to trash?`,
         onConfirm: () => {
             const now = Date.now();
             setNotes(prev => prev.map(n => n.id === id ? { ...n, deletedAt: now, updatedAt: now } : n));
