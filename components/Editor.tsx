@@ -234,10 +234,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       }
   };
 
-  const getLineNumber = (content: string, index: number) => {
-    return content.substring(0, index).split('\n').length;
-  };
-
   // Check if we should show autocomplete
   const checkAutocomplete = (currentCursor: number, text: string) => {
     const textBefore = text.slice(0, currentCursor);
@@ -503,7 +499,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     const target = e.target as HTMLTextAreaElement;
     const currentClickIndex = target.selectionStart;
     const content = note.content;
-    const clickedLineNumber = getLineNumber(content, currentClickIndex);
 
     // PRIORITY 1: CHECKBOX TOGGLE
     const lineStart = content.lastIndexOf('\n', currentClickIndex - 1) + 1;
