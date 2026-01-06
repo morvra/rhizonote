@@ -309,13 +309,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
       if (el) {
         if (el.hasAttribute('data-link-title') || el.hasAttribute('data-url')) {
-          const lineIndexStr = el.getAttribute('data-line-index');
-          if (lineIndexStr) {
-              const lineIndex = parseInt(lineIndexStr, 10);
-              if (lineIndex !== currentLineIndex) {
-                  cursor = 'pointer';
-              }
-          }
+          // If we are hovering a link, make sure the cursor reflects it
+          cursor = 'pointer';
         }
       }
       
@@ -418,7 +413,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
               const wikiLink = el.getAttribute('data-link-title');
 
               if (url || wikiLink) {
-                  e.preventDefault(); // This stops the cursor from moving
+                  e.preventDefault(); // This stops the cursor from moving and focusing
+                  e.stopPropagation(); // Stop bubbling
                   if (url) window.open(url, '_blank');
                   if (wikiLink) onLinkClick(wikiLink);
                   return;
@@ -754,7 +750,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                             <span key={i} className="text-amber-600 dark:text-amber-500">
                                 {'!['}{alt}{']('}
                                 <span 
-                                    className={`${isActive ? '' : 'underline cursor-pointer pointer-events-auto'}`}
+                                    className={`${isActive ? '' : 'underline cursor-pointer pointer-events-auto'} z-10 relative`}
                                     data-url={url}
                                     data-line-index={index}
                                 >
@@ -778,7 +774,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                                 <span className="text-indigo-600 dark:text-indigo-400">{text}</span>
                                 {']('}
                                 <span 
-                                    className={`${isActive ? '' : 'underline cursor-pointer pointer-events-auto'}`}
+                                    className={`${isActive ? '' : 'underline cursor-pointer pointer-events-auto'} z-10 relative`}
                                     data-url={url}
                                     data-line-index={index}
                                 >
@@ -797,6 +793,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                             key={i} 
                             className={`
                                 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-indigo-600 dark:text-indigo-400 underline decoration-indigo-500/50 pointer-events-auto'}
+                                z-10 relative
                             `}
                             data-link-title={title}
                             data-line-index={index}
@@ -811,6 +808,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                             key={i} 
                             className={`
                                 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-blue-600 dark:text-blue-400 underline decoration-blue-500/50 pointer-events-auto'}
+                                z-10 relative
                             `}
                             data-url={part}
                             data-line-index={index}
@@ -976,7 +974,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 {/* Backdrop: Syntax Highlighting */}
                 <div 
                     ref={backdropRef}
-                    className="min-h-full p-8 font-sans text-slate-800 dark:text-slate-300 whitespace-pre-wrap break-words pointer-events-none"
+                    className="min-h-full px-8 pt-4 pb-12 font-sans text-slate-800 dark:text-slate-300 whitespace-pre-wrap break-words pointer-events-none"
                     style={{ fontSize: `${fontSize}px`, lineHeight: 1.6 }}
                     aria-hidden="true"
                 >
@@ -996,7 +994,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 onKeyDown={handleKeyDown}
                 onKeyUp={handleKeyUp}
                 onBlur={() => setSelectionMenu(null)}
-                className="absolute inset-0 w-full h-full p-8 bg-transparent text-transparent caret-indigo-600 dark:caret-slate-200 font-sans resize-none focus:outline-none z-10 overflow-hidden"
+                className="absolute inset-0 w-full h-full px-8 pt-4 pb-12 bg-transparent text-transparent caret-indigo-600 dark:caret-slate-200 font-sans resize-none focus:outline-none z-10 overflow-hidden"
                 style={{ fontSize: `${fontSize}px`, lineHeight: 1.6 }}
                 placeholder="Start typing..."
                 spellCheck={false}
@@ -1079,7 +1077,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             </div>
             ) : (
             <div 
-                className="w-full h-full p-8 prose prose-slate dark:prose-invert max-w-none transition-colors duration-200 flex-1 min-h-[200px]"
+                className="w-full h-full px-8 pt-4 pb-12 prose prose-slate dark:prose-invert max-w-none transition-colors duration-200 flex-1 min-h-[200px]"
                 style={{ fontSize: `${fontSize}px` }}
                 dangerouslySetInnerHTML={renderMarkdown(note.content)}
                 onClick={handlePreviewClick}
