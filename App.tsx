@@ -4,7 +4,7 @@ import Editor from './components/Editor';
 import { Note, Folder, SortField, SortDirection, Theme } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS } from './constants';
 import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle } from 'lucide-react';
-import { getDropboxAuthUrl, parseAuthTokenFromUrl, syncDropboxData, getNotePath, getFolderPath, RenameOperation } from './utils/dropboxService';
+import { getDropboxAuthUrl, parseAuthTokenFromUrl, syncDropboxData, getNotePath, getFolderPath, RenameOperation, exchangeCodeForToken } from './utils/dropboxService';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -13,7 +13,8 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const LS_KEY_NOTES = 'rhizonote_notes';
 const LS_KEY_FOLDERS = 'rhizonote_folders';
 const LS_KEY_THEME = 'rhizonote_theme';
-const LS_KEY_DB_TOKEN = 'rhizonote_dropbox_token';
+const LS_KEY_DB_TOKEN = 'rhizonote_dropbox_token'; // Legacy / Short term
+const LS_KEY_DB_REFRESH_TOKEN = 'rhizonote_dropbox_refresh_token'; // Long term
 const LS_KEY_PANES = 'rhizonote_panes';
 const LS_KEY_ACTIVE_PANE = 'rhizonote_active_pane';
 const LS_KEY_SORT = 'rhizonote_sort';
@@ -150,6 +151,8 @@ export default function App() {
 
   // Dropbox State
   const [dropboxToken, setDropboxToken] = useState<string | null>(() => localStorage.getItem(LS_KEY_DB_TOKEN));
+  const [dropboxRefreshToken, setDropboxRefreshToken] = useState<string | null>(() => localStorage.getItem(LS_KEY_DB_REFRESH_TOKEN));
+  
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [syncMessage, setSyncMessage] = useState('');
 
@@ -302,32 +305,83 @@ export default function App() {
       console.log(`Cleaned up ${expiredNotes.length} notes and ${expiredFolders.length} folders from trash.`);
   };
 
-  // Dropbox Auth Check
+  // Dropbox Auth Check & Code Handling
   useEffect(() => {
-      const token = parseAuthTokenFromUrl();
-      if (token) {
-          setDropboxToken(token);
-          localStorage.setItem(LS_KEY_DB_TOKEN, token);
-          window.location.hash = ''; 
-          setShowSettings(true); 
-          setSyncStatus('success');
-          setSyncMessage('Dropbox connected successfully!');
-          setTimeout(() => setSyncStatus('idle'), 3000);
-      }
+      const handleAuth = async () => {
+          // Check for Authorization Code (PKCE Flow)
+          const urlParams = new URLSearchParams(window.location.search);
+          const code = urlParams.get('code');
+          
+          if (code) {
+              setSyncStatus('syncing');
+              setSyncMessage('Completing login...');
+              setShowSettings(true);
+              
+              try {
+                  const data = await exchangeCodeForToken(code);
+                  const { access_token, refresh_token } = data.result;
+
+                  if (access_token) {
+                      setDropboxToken(access_token);
+                      localStorage.setItem(LS_KEY_DB_TOKEN, access_token);
+                  }
+                  
+                  if (refresh_token) {
+                      setDropboxRefreshToken(refresh_token);
+                      localStorage.setItem(LS_KEY_DB_REFRESH_TOKEN, refresh_token);
+                  }
+
+                  // Clear URL parameters
+                  window.history.replaceState({}, document.title, window.location.pathname);
+                  
+                  setSyncStatus('success');
+                  setSyncMessage('Dropbox connected successfully!');
+                  setTimeout(() => setSyncStatus('idle'), 3000);
+              } catch (e) {
+                  console.error('Failed to exchange token', e);
+                  setSyncStatus('error');
+                  setSyncMessage('Login failed. Please try again.');
+              }
+              return;
+          }
+
+          // Legacy / Fallback Check
+          const legacyToken = parseAuthTokenFromUrl();
+          if (legacyToken) {
+              setDropboxToken(legacyToken);
+              localStorage.setItem(LS_KEY_DB_TOKEN, legacyToken);
+              window.location.hash = ''; 
+              setShowSettings(true); 
+              setSyncStatus('success');
+              setSyncMessage('Dropbox connected (Legacy)');
+              setTimeout(() => setSyncStatus('idle'), 3000);
+          }
+      };
+
+      handleAuth();
   }, []);
 
-  const handleConnectDropbox = () => {
-      window.location.href = getDropboxAuthUrl();
+  const handleConnectDropbox = async () => {
+      try {
+        const url = await getDropboxAuthUrl();
+        window.location.href = url;
+      } catch (e) {
+          console.error(e);
+          alert('Failed to initialize Dropbox login.');
+      }
   };
 
   const handleDisconnectDropbox = () => {
       setDropboxToken(null);
+      setDropboxRefreshToken(null);
       localStorage.removeItem(LS_KEY_DB_TOKEN);
+      localStorage.removeItem(LS_KEY_DB_REFRESH_TOKEN);
       setSyncMessage('');
   };
 
   const handleSync = async () => {
-      if (!dropboxToken) {
+      // We check for either token. Sync will use refresh token if available for long-term access.
+      if (!dropboxToken && !dropboxRefreshToken) {
           if (confirm("Dropbox is not connected. Open settings?")) {
             setShowSettings(true);
           }
@@ -337,7 +391,12 @@ export default function App() {
       setSyncMessage('Syncing changes...');
       try {
           // Perform Two-Way Sync, passing queued deletions AND renames
-          const data = await syncDropboxData(dropboxToken, notes, folders, deletedPaths, pendingRenames);
+          const auth = {
+              accessToken: dropboxToken,
+              refreshToken: dropboxRefreshToken
+          };
+
+          const data = await syncDropboxData(auth, notes, folders, deletedPaths, pendingRenames);
           if (data) {
               setNotes(data.notes);
               setFolders(data.folders);
@@ -358,7 +417,7 @@ export default function App() {
 
   // Auto-sync on load
   useEffect(() => {
-      if (dropboxToken) {
+      if (dropboxToken || dropboxRefreshToken) {
           handleSync();
       }
   }, []);
@@ -1093,9 +1152,9 @@ export default function App() {
 
                 <button
                     onClick={handleSync}
-                    disabled={!dropboxToken || syncStatus === 'syncing'}
+                    disabled={!dropboxToken && !dropboxRefreshToken || syncStatus === 'syncing'}
                     className={`p-1 rounded transition-colors ml-1 flex items-center justify-center 
-                        ${!dropboxToken 
+                        ${(!dropboxToken && !dropboxRefreshToken)
                             ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' 
                             : syncStatus === 'error'
                                 ? 'text-red-500 hover:bg-red-100 dark:hover:bg-red-900/20'
@@ -1104,7 +1163,7 @@ export default function App() {
                                     : 'text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-200 dark:hover:bg-slate-700'
                         }`}
                     title={
-                        !dropboxToken 
+                        (!dropboxToken && !dropboxRefreshToken)
                         ? "Dropbox Not Connected" 
                         : syncStatus === 'syncing' 
                             ? "Syncing..." 
@@ -1317,7 +1376,7 @@ export default function App() {
                         <span>Dropbox Sync</span>
                     </div>
                     <div className="bg-gray-100 dark:bg-slate-950 p-3 rounded-lg space-y-3">
-                        {!dropboxToken ? (
+                        {!dropboxToken && !dropboxRefreshToken ? (
                             <button
                                 onClick={handleConnectDropbox}
                                 className="w-full py-2 bg-[#0061FE] hover:bg-[#0057e5] text-white rounded-md font-medium text-sm flex items-center justify-center gap-2 transition-colors"

@@ -1,4 +1,4 @@
-import { Dropbox } from 'dropbox';
+import { Dropbox, DropboxAuth } from 'dropbox';
 import { Note, Folder } from '../types';
 
 const CLIENT_ID = '2reog117jgm9gmw';
@@ -14,6 +14,15 @@ export interface SyncData {
 export interface RenameOperation {
     from: string;
     to: string;
+}
+
+export interface DropboxAuthResult {
+    result: {
+        access_token: string;
+        refresh_token: string;
+        expires_in?: number;
+        uid?: string;
+    }
 }
 
 // Helper: Sanitize filename to avoid invalid characters in Dropbox paths
@@ -46,11 +55,24 @@ const chunkArray = <T>(array: T[], size: number): T[][] => {
   );
 };
 
-export const getDropboxAuthUrl = () => {
+// Updated to use PKCE flow (async)
+export const getDropboxAuthUrl = async (): Promise<string> => {
+  const dbxAuth = new DropboxAuth({ clientId: CLIENT_ID });
   const redirectUri = window.location.href.split('#')[0].split('?')[0];
-  return `https://www.dropbox.com/oauth2/authorize?client_id=${CLIENT_ID}&response_type=token&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  // Args: redirectUri, state, responseType, tokenAccessType, scope, includeGrantedScopes, usePkce
+  // 'offline' access type is required to get a refresh token
+  return dbxAuth.getAuthenticationUrl(redirectUri, undefined, 'code', 'offline', undefined, undefined, true) as Promise<string>;
 };
 
+// New helper to exchange authorization code for tokens
+export const exchangeCodeForToken = async (code: string): Promise<DropboxAuthResult> => {
+    const dbxAuth = new DropboxAuth({ clientId: CLIENT_ID });
+    const redirectUri = window.location.href.split('#')[0].split('?')[0];
+    const response = await dbxAuth.getAccessTokenFromCode(redirectUri, code);
+    return response as unknown as DropboxAuthResult;
+};
+
+// Parsing hash is no longer the primary method, but kept for legacy/cleanup if needed
 export const parseAuthTokenFromUrl = (): string | null => {
   const hash = window.location.hash;
   if (!hash) return null;
@@ -60,20 +82,32 @@ export const parseAuthTokenFromUrl = (): string | null => {
 
 /**
  * Performs a smart two-way sync.
- * 1. Process queued deletions.
- * 2. Process queued renames (Moves).
- * 3. Downloads file list from Dropbox.
- * 4. Compares with local notes based on PATH.
- * 5. Syncs diffs.
+ * Now supports Refresh Tokens for long-lived sessions.
  */
 export const syncDropboxData = async (
-    accessToken: string, 
+    auth: { accessToken?: string | null, refreshToken?: string | null },
     localNotes: Note[], 
     localFolders: Folder[], 
     pathsToDelete: string[] = [],
     renames: RenameOperation[] = []
 ): Promise<SyncData> => {
-  const dbx = new Dropbox({ accessToken });
+  
+  // Initialize Dropbox client with Refresh Token if available (Preferred)
+  let dbx: Dropbox;
+  
+  if (auth.refreshToken) {
+      // SDK automatically handles refreshing access token when refreshToken is provided
+      dbx = new Dropbox({ 
+          clientId: CLIENT_ID, 
+          refreshToken: auth.refreshToken 
+      });
+  } else if (auth.accessToken) {
+      // Fallback for legacy sessions (will expire eventually)
+      dbx = new Dropbox({ accessToken: auth.accessToken });
+  } else {
+      throw new Error("No credentials provided for sync.");
+  }
+
   const log: string[] = [];
 
   try {
