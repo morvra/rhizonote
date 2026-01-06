@@ -152,7 +152,7 @@ export const syncDropboxData = async (
     };
     mapLocalFolderPaths(null, '');
 
-    // Process Remote Folders
+    // Process Remote Folders (Remote -> Local)
     remoteFolderEntries.sort((a, b) => a.path_lower.length - b.path_lower.length).forEach((entry: any) => {
         if (!localFolderPaths.has(entry.path_lower)) {
             const name = entry.name;
@@ -212,7 +212,42 @@ export const syncDropboxData = async (
         log.push(`Queued download: ${remoteFile.name} (New Remote)`);
     });
 
-    // 4. Execute Downloads
+    // 4. Create Missing Remote Folders (Local -> Remote)
+    const folderUploads: string[] = [];
+    const remotePathSet = new Set(remoteFolderEntries.map(e => e.path_lower));
+
+    for (const folder of localFolders) {
+        if (folder.deletedAt) continue;
+        const path = getFolderPath(folder.id, localFolders);
+        if (!path || path === '/' || path === '') continue;
+        
+        if (!remotePathSet.has(path.toLowerCase())) {
+            folderUploads.push(path);
+        }
+    }
+    
+    // Sort shortest first to ensure parents are created before children
+    folderUploads.sort((a, b) => a.length - b.length);
+    const uniqueFolderUploads = [...new Set(folderUploads)];
+
+    const createFolderChunks = chunkArray(uniqueFolderUploads, 5);
+    for (const batch of createFolderChunks) {
+        await Promise.all(batch.map(async (path) => {
+            try {
+                await dbx.filesCreateFolderV2({ path, autorename: false });
+                log.push(`Created remote folder: ${path}`);
+            } catch (e: any) {
+                 // Ignore if path/conflict (folder already exists)
+                 const errorTag = e?.error?.['.tag'];
+                 const pathReason = e?.error?.path?.['.tag'];
+                 if (errorTag !== 'path' || pathReason !== 'conflict') {
+                     // console.error(`Create folder warning: ${path}`, e);
+                 }
+            }
+        }));
+    }
+
+    // 5. Execute Downloads
     const dlChunks = chunkArray(filesToDownload, 5);
     for (const batch of dlChunks) {
         await Promise.all(batch.map(async (entry) => {
@@ -280,7 +315,7 @@ export const syncDropboxData = async (
         }));
     }
 
-    // 5. Execute Uploads
+    // 6. Execute Uploads
     const ulChunks = chunkArray(notesToUpload, 5);
     for (const batch of ulChunks) {
         await Promise.all(batch.map(async (note) => {
