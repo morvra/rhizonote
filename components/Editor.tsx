@@ -105,7 +105,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   // Autocomplete state
   const [showPopup, setShowPopup] = useState(false);
   const [popupQuery, setPopupQuery] = useState('');
-  const [popupPos, setPopupPos] = useState({ top: 0, left: 0 });
+  const [popupPos, setPopupPos] = useState<{ top?: number; bottom?: number; left: number }>({ top: 0, left: 0 });
   const [cursorIndex, setCursorIndex] = useState(0);
 
   // Selection Menu State
@@ -199,6 +199,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
           // Also reset backdrop scroll if it was scrollable (though it usually mirrors textarea)
           backdropRef.current.scrollTop = 0;
       }
+      // Close popup when note changes
+      setShowPopup(false);
   }, [note.id]);
 
   // Focus textarea when switching to edit mode
@@ -264,6 +266,53 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     return null;
   };
 
+  // Check if we should show autocomplete
+  const checkAutocomplete = (currentCursor: number, text: string) => {
+    const textBefore = text.slice(0, currentCursor);
+    const lastOpen = textBefore.lastIndexOf('[[');
+    const lastClose = textBefore.lastIndexOf(']]');
+    
+    // Check if we are inside [[ and not closed
+    if (lastOpen !== -1 && lastOpen > lastClose) {
+        const query = textBefore.slice(lastOpen + 2);
+        // Ensure no newlines or backticks inside the query to prevent false positives
+        if (!query.includes('\n') && !query.includes('`')) {
+            setPopupQuery(query);
+            setShowPopup(true);
+            
+            // Calculate accurate position
+            const coords = measureSelection(lastOpen, lastOpen + 2);
+            if (coords && containerRef.current) {
+                 const containerRect = containerRef.current.getBoundingClientRect();
+                 const lineHeight = 24; // Approx line height (can vary based on styling)
+                 
+                 // Standard position: Just below the text line
+                 const topPos = containerRect.top + coords.top + lineHeight; 
+                 const left = containerRect.left + coords.left;
+                 
+                 // Boundary check
+                 // Reduced est height due to max-h-36 (144px) + header (~30px) + padding = ~180px
+                 const POPUP_EST_HEIGHT = 180; 
+                 const viewportHeight = window.innerHeight;
+
+                 if (topPos + POPUP_EST_HEIGHT > viewportHeight) {
+                    // Not enough space below, flip to above the line.
+                    // Use 'bottom' positioning to ensure it sits right on top of the line 
+                    // regardless of actual content height.
+                    // Anchor to the top of the line (containerRect.top + coords.top)
+                    // Added -4 offset to bring it closer to the text
+                    const bottom = viewportHeight - (containerRect.top + coords.top) - 4;
+                    setPopupPos({ bottom, left });
+                 } else {
+                    setPopupPos({ top: topPos, left });
+                 }
+            }
+            return;
+        }
+    }
+    setShowPopup(false);
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newVal = e.target.value;
     const newCursorPos = e.target.selectionStart;
@@ -275,30 +324,11 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     const line = newVal.substring(0, newCursorPos).split('\n').length - 1;
     setCurrentLineIndex(line);
     
-    // Hide popup on typing
+    // Hide context menu on typing
     setSelectionMenu(null);
 
-    // Autocomplete Logic
-    const textBeforeCursor = newVal.slice(0, newCursorPos);
-    const lastOpenBracket = textBeforeCursor.lastIndexOf('[[');
-    const lastCloseBracket = textBeforeCursor.lastIndexOf(']]');
-
-    if (lastOpenBracket !== -1 && lastOpenBracket > lastCloseBracket) {
-      const query = textBeforeCursor.slice(lastOpenBracket + 2);
-      if (!query.includes('\n') && !textBeforeCursor.slice(lastOpenBracket).includes('`')) {
-        setPopupQuery(query);
-        setShowPopup(true);
-        const lines = textBeforeCursor.split('\n');
-        const lineNum = lines.length;
-        // Approximation for popup position, fontSize aware
-        const lineHeight = 1.6 * fontSize; 
-        const approxTop = lineNum * lineHeight; 
-        setPopupPos({ top: Math.min(approxTop, 400), left: 20 }); 
-        return;
-      }
-    }
-    
-    setShowPopup(false);
+    // Check Autocomplete
+    checkAutocomplete(newCursorPos, newVal);
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLTextAreaElement>) => {
@@ -356,8 +386,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     const content = textarea.value;
     const before = content.substring(0, start);
     const selected = content.substring(start, end);
-    // Add space if selected is empty or ends with newline to ensure span has height/width if needed
-    // but here we know selected has length > 0
     const after = content.substring(end);
     
     div.textContent = before;
@@ -377,9 +405,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     
     document.body.removeChild(div);
     
-    // Position relative to content flow. 
-    // Since textarea is absolute inside a scrollable container, 
-    // the top is just the relativeTop within the content.
     return {
         top: relativeTop,
         left: relativeLeft + (width / 2)
@@ -418,6 +443,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         const pos = textareaRef.current.selectionStart;
         const line = note.content.substring(0, pos).split('\n').length - 1;
         setCurrentLineIndex(line);
+        // Check if we moved out of autocomplete
+        checkAutocomplete(pos, note.content);
     }
   };
 
@@ -525,6 +552,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     }
     
     updateLineTracking();
+    checkAutocomplete(currentClickIndex, content);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -574,7 +602,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         const basePrefix = listMatch[0];
         
         // Check for task regex: e.g. "   - [ ] " or "1. [x] "
-        const taskMatch = currentLine.match(/^(\s*)([-*]|\d+\.)\s+\[([ x])\]\s/);
+        const taskRegex = /^(\s*)([-*]|\d+\.)\s+\[([ x])\]\s/;
+        const taskMatch = currentLine.match(taskRegex);
         
         // Determine the "full" prefix. If it's a task, the prefix includes the bracket part.
         const fullPrefix = taskMatch ? taskMatch[0] : basePrefix;
@@ -610,9 +639,12 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     }
   };
 
-  const handleKeyUp = () => {
+  const handleKeyUp = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     updateLineTracking();
     updateSelectionMenu();
+    // Check if cursor moved out of autocomplete context (e.g. arrow keys)
+    const target = e.target as HTMLTextAreaElement;
+    checkAutocomplete(target.selectionStart, note.content);
   };
 
   const insertWikiLink = (title: string) => {
@@ -700,16 +732,30 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.*?)\*/g, '<em>$1</em>');
     
+    // Images ![alt](url)
+    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="max-w-full h-auto rounded-lg shadow-sm my-4" />');
+
     // Links [text](url)
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-indigo-600 dark:text-indigo-400 hover:underline">$1</a>');
     
     // Auto-link <url>
     html = html.replace(/<(https?:\/\/[^>]+)>/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-indigo-600 dark:text-indigo-400 hover:underline">$1</a>');
 
+    // Interactive Tasks (Place BEFORE lists to prevent tasks being consumed by list regex)
+    let taskIndex = 0;
+    // Regex for both checked and unchecked to ensure correct indexing
+    html = html.replace(/^\s*([-\*]|\d+\.)\s+\[([ x])\]\s(.*$)/gm, (_match, _bullet, state, content) => {
+        const idx = taskIndex++;
+        const isChecked = state === 'x';
+        const opacity = isChecked ? 'opacity-50' : 'opacity-80';
+        const decoration = isChecked ? 'line-through text-slate-500' : 'text-slate-700 dark:text-slate-300';
+        
+        return `<div class="flex items-start gap-3 my-2 ${opacity}"><input type="checkbox" ${isChecked ? 'checked' : ''} data-task-index="${idx}" class="mt-1.5 rounded border-gray-400 dark:border-slate-600 bg-transparent transform scale-110 cursor-pointer pointer-events-auto"><span class="${decoration}">${content}</span></div>`;
+    });
+
     html = html.replace(/^\s*-\s+(.*$)/gm, '<li class="ml-4 list-disc text-slate-700 dark:text-slate-300 my-1">$1</li>');
     html = html.replace(/^\s*(\d+)\.\s+(.*$)/gm, '<li class="ml-4 list-decimal text-slate-700 dark:text-slate-300 my-1">$2</li>');
-    html = html.replace(/^\s*-\s\[ \]\s(.*$)/gm, '<div class="flex items-start gap-3 my-2 opacity-80"><input type="checkbox" disabled class="mt-1.5 rounded border-gray-400 dark:border-slate-600 bg-transparent transform scale-110"><span class="text-slate-700 dark:text-slate-300">$1</span></div>');
-    html = html.replace(/^\s*-\s\[x\]\s(.*$)/gm, '<div class="flex items-start gap-3 my-2 opacity-50"><input type="checkbox" checked disabled class="mt-1.5 rounded border-gray-400 dark:border-slate-600 bg-transparent transform scale-110"><span class="text-slate-500 dark:text-slate-500 line-through">$1</span></div>');
+
     html = html.replace(/\n\n/g, '<br/><br/>');
     html = html.replace(
       /\[\[(.*?)\]\]/g, 
@@ -718,11 +764,45 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     return { __html: html };
   };
 
+  const handlePreviewTaskToggle = (taskIndex: number) => {
+    const lines = note.content.split('\n');
+    let currentTaskCount = 0;
+    const newLines = lines.map(line => {
+        // Regex to identify a task line
+        const taskRegex = /^(\s*)([-*]|\d+\.)\s+\[([ x])\]\s(.*)$/;
+        const match = line.match(taskRegex);
+        if (match) {
+            if (currentTaskCount === taskIndex) {
+                const isChecked = match[3] === 'x';
+                const newStatus = isChecked ? ' ' : 'x';
+                // Reconstruct line
+                return `${match[1]}${match[2]} [${newStatus}] ${match[4]}`;
+            }
+            currentTaskCount++;
+        }
+        return line;
+    });
+    
+    onUpdate(note.id, { content: newLines.join('\n') });
+  };
+
   const handlePreviewClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
+    
+    // Wiki Links
     if (target.classList.contains('wiki-link')) {
       const link = target.getAttribute('data-link');
       if (link) onLinkClick(link);
+      return;
+    }
+
+    // Interactive Checkboxes
+    if (target.tagName === 'INPUT' && target.getAttribute('type') === 'checkbox') {
+        const indexStr = target.getAttribute('data-task-index');
+        if (indexStr !== null) {
+            const index = parseInt(indexStr, 10);
+            handlePreviewTaskToggle(index);
+        }
     }
   };
 
