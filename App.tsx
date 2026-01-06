@@ -3,7 +3,7 @@ import Sidebar from './components/Sidebar';
 import Editor from './components/Editor';
 import { Note, Folder, SortField, SortDirection, Theme } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS } from './constants';
-import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, Upload, Download, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle } from 'lucide-react';
+import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle } from 'lucide-react';
 import { getDropboxAuthUrl, parseAuthTokenFromUrl, syncDropboxData, getNotePath, getFolderPath, RenameOperation } from './utils/dropboxService';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);

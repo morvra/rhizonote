@@ -1,4 +1,4 @@
-import { Dropbox, files } from 'dropbox';
+import { Dropbox } from 'dropbox';
 import { Note, Folder } from '../types';
 
 const CLIENT_ID = '2reog117jgm9gmw';
