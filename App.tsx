@@ -4,7 +4,7 @@ import Editor from './components/Editor';
 import { Note, Folder, SortField, SortDirection, Theme } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS } from './constants';
 import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, Upload, Download, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle } from 'lucide-react';
-import { getDropboxAuthUrl, parseAuthTokenFromUrl, uploadDataToDropbox, downloadDataFromDropbox } from './utils/dropboxService';
+import { getDropboxAuthUrl, parseAuthTokenFromUrl, syncDropboxData, getNotePath, getFolderPath, RenameOperation } from './utils/dropboxService';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -19,6 +19,8 @@ const LS_KEY_SORT = 'rhizonote_sort';
 const LS_KEY_EXPANDED = 'rhizonote_expanded';
 const LS_KEY_UI_SETTINGS = 'rhizonote_ui_settings';
 const LS_KEY_DAILY_PREFS = 'rhizonote_daily_prefs';
+const LS_KEY_DELETED_PATHS = 'rhizonote_deleted_paths';
+const LS_KEY_PENDING_RENAMES = 'rhizonote_pending_renames';
 
 // Simple date formatter
 const formatDate = (date: Date, format: string) => {
@@ -39,9 +41,6 @@ const formatDate = (date: Date, format: string) => {
 // Process template with date offsets (e.g. {{date+1d:YYYY-MM-DD}})
 const processTemplate = (template: string, title: string) => {
     let result = template.replace(/\{\{title\}\}/g, title);
-
-    // Regex for {{date(+1d):Format}}
-    // Captures: 1: Offset (+1d, -2M), 2: Format (YYYY-MM-DD)
     result = result.replace(/\{\{date([+-]\d+[dmy])?:(.*?)\}\}/gi, (_, offset, format) => {
         const d = new Date();
         if (offset) {
@@ -101,12 +100,42 @@ export default function App() {
       return saved ? JSON.parse(saved) : INITIAL_FOLDERS;
   });
   
+  // Track deleted paths (notes/folders) for sync deletion
+  const [deletedPaths, setDeletedPaths] = useState<string[]>(() => {
+      const saved = localStorage.getItem(LS_KEY_DELETED_PATHS);
+      return saved ? JSON.parse(saved) : [];
+  });
+  
+  // Track renames/moves: { from: 'old/path', to: 'new/path' }
+  const [pendingRenames, setPendingRenames] = useState<RenameOperation[]>(() => {
+      const saved = localStorage.getItem(LS_KEY_PENDING_RENAMES);
+      return saved ? JSON.parse(saved) : [];
+  });
+
+  // Helper to queue renames intelligently
+  // If A -> B exists, and we rename B -> C, we update the existing entry to A -> C
+  const queueRename = (from: string, to: string) => {
+      setPendingRenames(prev => {
+          // Check if 'from' is the destination of a previous rename
+          const existingIdx = prev.findIndex(op => op.to === from);
+          
+          if (existingIdx > -1) {
+              // Modify existing op (A -> B becomes A -> C)
+              const newRenames = [...prev];
+              newRenames[existingIdx] = { ...newRenames[existingIdx], to };
+              return newRenames;
+          } else {
+              // Add new op
+              return [...prev, { from, to }];
+          }
+      });
+  };
+
   // Settings State
   const [theme, setTheme] = useState<Theme>(() => {
       return (localStorage.getItem(LS_KEY_THEME) as Theme) || 'dark';
   });
 
-  // Load UI Settings (Size, Width, Visibility)
   const uiSettings = useMemo(() => {
       try {
           return JSON.parse(localStorage.getItem(LS_KEY_UI_SETTINGS) || '{}');
@@ -123,10 +152,8 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [syncMessage, setSyncMessage] = useState('');
 
-  // Track tasks completed *during* the current modal session so they don't disappear immediately
   const [recentlyCompletedTasks, setRecentlyCompletedTasks] = useState<Set<string>>(new Set());
 
-  // Daily Note Settings
   const dailyPrefs = useMemo(() => {
       try {
           return JSON.parse(localStorage.getItem(LS_KEY_DAILY_PREFS) || '{}');
@@ -134,14 +161,12 @@ export default function App() {
   }, []);
 
   const [dailyNoteFormat, setDailyNoteFormat] = useState(dailyPrefs.format || 'YYYY-MM-DD');
-  const [dailyNoteFolderId, setDailyNoteFolderId] = useState<string>(dailyPrefs.folderId || ''); // Empty string means root
+  const [dailyNoteFolderId, setDailyNoteFolderId] = useState<string>(dailyPrefs.folderId || ''); 
   const [dailyNoteTemplate, setDailyNoteTemplate] = useState(dailyPrefs.template || '# {{title}}\n\n<< [[{{date-1d:YYYY-MM-DD}}]] | [[{{date+1d:YYYY-MM-DD}}]] >>\n\n## Tasks\n- [ ] ');
 
-  // Modal States
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({ isOpen: false, message: '', onConfirm: () => {} });
   const [inputModal, setInputModal] = useState<InputModalState>({ isOpen: false, title: '', value: '', onConfirm: () => {} });
 
-  // Sort State
   const [sortField, setSortField] = useState<SortField>(() => {
       const saved = localStorage.getItem(LS_KEY_SORT);
       return saved ? JSON.parse(saved).field : 'updated';
@@ -151,28 +176,24 @@ export default function App() {
       return saved ? JSON.parse(saved).direction : 'desc';
   });
 
-  // Folder Expansion State
   const [expandedFolderIds, setExpandedFolderIds] = useState<string[]>(() => {
       const saved = localStorage.getItem(LS_KEY_EXPANDED);
       if (saved) return JSON.parse(saved);
-      // Default: All folders expanded
       return INITIAL_FOLDERS.map(f => f.id);
   });
   
-  // Layout State
-  const [sidebarWidth, setSidebarWidth] = useState(uiSettings.sidebarWidth || 256); // Default 256px
-  const [splitRatio, setSplitRatio] = useState(uiSettings.splitRatio || 0.5); // Default 50% for split view
+  const [sidebarWidth, setSidebarWidth] = useState(uiSettings.sidebarWidth || 256);
+  const [splitRatio, setSplitRatio] = useState(uiSettings.splitRatio || 0.5);
   const isResizingSidebar = useRef(false);
   const isResizingSplit = useRef(false);
 
-  // State for panes and their history
   const [panes, setPanes] = useState<(string | null)[]>(() => {
       const saved = localStorage.getItem(LS_KEY_PANES);
       return saved ? JSON.parse(saved) : ['1', null];
   }); 
   const [history, setHistory] = useState<PaneHistory[]>([
-      { stack: ['1'], currentIndex: 0 }, // History for Pane 0
-      { stack: [], currentIndex: -1 }    // History for Pane 1
+      { stack: ['1'], currentIndex: 0 },
+      { stack: [], currentIndex: -1 }
   ]);
 
   const [activePaneIndex, setActivePaneIndex] = useState<number>(() => {
@@ -180,7 +201,6 @@ export default function App() {
       return saved ? parseInt(saved, 10) : 0;
   });
   
-  // Sidebar Visibility States
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(uiSettings.sidebarVisible ?? true);
 
@@ -196,6 +216,14 @@ export default function App() {
   }, [folders]);
 
   useEffect(() => {
+      localStorage.setItem(LS_KEY_DELETED_PATHS, JSON.stringify(deletedPaths));
+  }, [deletedPaths]);
+
+  useEffect(() => {
+      localStorage.setItem(LS_KEY_PENDING_RENAMES, JSON.stringify(pendingRenames));
+  }, [pendingRenames]);
+
+  useEffect(() => {
     localStorage.setItem(LS_KEY_THEME, theme);
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
@@ -204,7 +232,6 @@ export default function App() {
     }
   }, [theme]);
 
-  // Persist Panes State
   useEffect(() => {
     localStorage.setItem(LS_KEY_PANES, JSON.stringify(panes));
   }, [panes]);
@@ -213,17 +240,14 @@ export default function App() {
     localStorage.setItem(LS_KEY_ACTIVE_PANE, activePaneIndex.toString());
   }, [activePaneIndex]);
 
-  // Persist Sort State
   useEffect(() => {
       localStorage.setItem(LS_KEY_SORT, JSON.stringify({ field: sortField, direction: sortDirection }));
   }, [sortField, sortDirection]);
 
-  // Persist Expanded Folders
   useEffect(() => {
       localStorage.setItem(LS_KEY_EXPANDED, JSON.stringify(expandedFolderIds));
   }, [expandedFolderIds]);
 
-  // Persist UI Settings
   useEffect(() => {
       const settings = {
           fontSize,
@@ -235,7 +259,6 @@ export default function App() {
       localStorage.setItem(LS_KEY_UI_SETTINGS, JSON.stringify(settings));
   }, [fontSize, sidebarWidth, splitRatio, sidebarVisible, showTasks]);
 
-  // Persist Daily Note Preferences
   useEffect(() => {
       const prefs = {
           format: dailyNoteFormat,
@@ -251,15 +274,14 @@ export default function App() {
       if (token) {
           setDropboxToken(token);
           localStorage.setItem(LS_KEY_DB_TOKEN, token);
-          window.location.hash = ''; // Clear hash
-          setShowSettings(true); // Open settings to show success
+          window.location.hash = ''; 
+          setShowSettings(true); 
           setSyncStatus('success');
           setSyncMessage('Dropbox connected successfully!');
           setTimeout(() => setSyncStatus('idle'), 3000);
       }
   }, []);
 
-  // Dropbox Handlers
   const handleConnectDropbox = () => {
       window.location.href = getDropboxAuthUrl();
   };
@@ -270,47 +292,34 @@ export default function App() {
       setSyncMessage('');
   };
 
-  const handleSyncPush = async () => {
+  const handleSync = async () => {
       if (!dropboxToken) {
-          // If trying to sync via shortcut without token, show settings or alert
           if (confirm("Dropbox is not connected. Open settings?")) {
             setShowSettings(true);
           }
           return;
       }
       setSyncStatus('syncing');
+      setSyncMessage('Syncing changes...');
       try {
-          await uploadDataToDropbox(dropboxToken, notes, folders);
-          setSyncStatus('success');
-          setSyncMessage(`Uploaded successfully at ${new Date().toLocaleTimeString()}`);
-      } catch (e) {
-          console.error(e);
-          setSyncStatus('error');
-          setSyncMessage('Upload failed. Check console.');
-      }
-      setTimeout(() => { if(syncStatus !== 'error') setSyncStatus('idle'); }, 3000);
-  };
-
-  const handleSyncPull = async () => {
-      if (!dropboxToken) return;
-      setSyncStatus('syncing');
-      try {
-          const data = await downloadDataFromDropbox(dropboxToken);
+          // Perform Two-Way Sync, passing queued deletions AND renames
+          const data = await syncDropboxData(dropboxToken, notes, folders, deletedPaths, pendingRenames);
           if (data) {
               setNotes(data.notes);
               setFolders(data.folders);
+              // Clear queues on successful sync
+              setDeletedPaths([]);
+              setPendingRenames([]);
+              
               setSyncStatus('success');
-              setSyncMessage(`Downloaded successfully at ${new Date().toLocaleTimeString()}`);
-          } else {
-              setSyncStatus('error');
-              setSyncMessage('No sync file found in Dropbox.');
+              setSyncMessage(`Synced at ${new Date().toLocaleTimeString()}. ${data.syncLog.length} changes.`);
           }
       } catch (e) {
           console.error(e);
           setSyncStatus('error');
-          setSyncMessage('Download failed. Check console.');
+          setSyncMessage('Sync failed. Check console.');
       }
-      setTimeout(() => { if(syncStatus !== 'error') setSyncStatus('idle'); }, 3000);
+      setTimeout(() => { if(syncStatus !== 'error') setSyncStatus('idle'); }, 4000);
   };
 
   // Extract all tasks from all notes (Memoized)
@@ -319,7 +328,6 @@ export default function App() {
       notes.forEach(note => {
           const noteTasks: ExtractedTask[] = [];
           note.content.split('\n').forEach((line, idx) => {
-              // Regex: matches "   - [ ] task..." or "   - [x] task..."
               const match = line.match(/^(\s*)(-\s\[([ x])\]\s)(.*)/);
               if (match) {
                   noteTasks.push({
@@ -344,7 +352,6 @@ export default function App() {
   };
 
   const handleToggleTaskFromModal = (noteId: string, lineIndex: number, currentChecked: boolean) => {
-      // If currently unchecked (false), we are checking it. Add to "recently completed" so it stays visible.
       if (!currentChecked) {
           setRecentlyCompletedTasks((prev: Set<string>) => {
               const newSet = new Set(prev);
@@ -357,11 +364,10 @@ export default function App() {
           if (note.id !== noteId) return note;
 
           const lines = note.content.split('\n');
-          if (lineIndex >= lines.length) return note; // Safety check
+          if (lineIndex >= lines.length) return note; 
 
           const line = lines[lineIndex];
           const newStatus = currentChecked ? '[ ]' : '[x]';
-          // Replace only the first occurrence of [ ] or [x] to ensure we target the checkbox
           const newLine = line.replace(/\[([ x])\]/, newStatus);
           lines[lineIndex] = newLine;
 
@@ -372,7 +378,7 @@ export default function App() {
   const handleCreateNote = () => {
     const newNote: Note = {
       id: generateId(),
-      folderId: null, // Default to root
+      folderId: null, 
       title: '',
       content: '',
       isBookmarked: false,
@@ -381,7 +387,7 @@ export default function App() {
     };
     setNotes((prev: Note[]) => [newNote, ...prev]);
     openNote(newNote.id);
-    setMobileMenuOpen(false); // Close sidebar on mobile on create
+    setMobileMenuOpen(false); 
   };
 
   const handleCreateSpecificNote = (title: string, content: string) => {
@@ -395,25 +401,17 @@ export default function App() {
         createdAt: Date.now(),
     };
     setNotes((prev: Note[]) => [newNote, ...prev]);
-    // Note: We intentionally don't open the note here to keep focus on the editor
-    // unless the user specifically navigates there later.
   };
 
   const handleOpenDailyNote = () => {
     const todayTitle = formatDate(new Date(), dailyNoteFormat);
-    
-    // Check if folder exists, if not fallback to root
     const targetFolderId = dailyNoteFolderId && folders.find(f => f.id === dailyNoteFolderId) ? dailyNoteFolderId : null;
-
-    // Find existing note
     const existingNote = notes.find(n => n.title === todayTitle && n.folderId === targetFolderId);
 
     if (existingNote) {
         openNote(existingNote.id);
     } else {
-        // Create new daily note with processed template
         const content = processTemplate(dailyNoteTemplate, todayTitle);
-        
         const newNote: Note = {
             id: generateId(),
             folderId: targetFolderId,
@@ -443,11 +441,9 @@ export default function App() {
                     createdAt: Date.now() 
                 };
                 setFolders((prev: Folder[]) => [...prev, newFolder]);
-                // Automatically expand the new folder (or its parent)
                 if (parentId) {
                     setExpandedFolderIds((prev: string[]) => prev.includes(parentId) ? prev : [...prev, parentId]);
                 }
-                // Expand the new folder itself so user can drop things into it
                 setExpandedFolderIds((prev: string[]) => [...prev, newFolder.id]);
             }
             setInputModal({ isOpen: false, title: '', value: '', onConfirm: () => {} });
@@ -465,6 +461,18 @@ export default function App() {
         value: folder.name,
         onConfirm: (newName) => {
             if (newName && newName !== folder.name) {
+                // Queue Rename logic
+                // For folders, getFolderPath uses the *current* state.
+                const oldPath = getFolderPath(id, folders);
+                
+                // Simulate new state to calculate new path
+                const simulatedFolders = folders.map(f => f.id === id ? { ...f, name: newName } : f);
+                const newPath = getFolderPath(id, simulatedFolders);
+                
+                if (oldPath !== newPath) {
+                    queueRename(oldPath, newPath);
+                }
+
                 setFolders((prev: Folder[]) => prev.map(f => f.id === id ? { ...f, name: newName } : f));
             }
             setInputModal({ isOpen: false, title: '', value: '', onConfirm: () => {} });
@@ -489,14 +497,18 @@ export default function App() {
         isOpen: true,
         message: `Delete folder "${name}" and all its contents?`,
         onConfirm: () => {
+            // Queue folder path for deletion
+            if (folder) {
+                const path = getFolderPath(id, folders);
+                setDeletedPaths(prev => [...prev, path]);
+            }
+
             const idsToDelete = [id, ...getDescendantFolderIds(id, folders)];
             setFolders((prev: Folder[]) => prev.filter(f => !idsToDelete.includes(f.id)));
             setNotes((prev: Note[]) => prev.filter(n => !n.folderId || !idsToDelete.includes(n.folderId)));
             
-            // Cleanup expanded state
             setExpandedFolderIds((prev: string[]) => prev.filter(eid => !idsToDelete.includes(eid)));
 
-            // Check if deleted folder was the daily note folder
             if (dailyNoteFolderId === id) {
                 setDailyNoteFolderId('');
             }
@@ -513,10 +525,16 @@ export default function App() {
   };
 
   const handleDeleteNote = (id: string) => {
+    const noteToDelete = notes.find(n => n.id === id);
     setConfirmModal({
         isOpen: true,
         message: 'Are you sure you want to delete this note?',
         onConfirm: () => {
+            if (noteToDelete) {
+                // Queue for deletion on sync
+                const path = getNotePath(noteToDelete.title, noteToDelete.folderId, folders);
+                setDeletedPaths(prev => [...prev, path]);
+            }
             setNotes((prev: Note[]) => prev.filter((n) => n.id !== id));
             setPanes((prev: (string | null)[]) => prev.map(paneId => paneId === id ? null : paneId));
             setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} });
@@ -529,10 +547,8 @@ export default function App() {
         const note = prev.find(n => n.id === id);
         if (!note) return prev;
         if (note.isBookmarked) {
-            // Unbookmark
             return prev.map(n => n.id === id ? { ...n, isBookmarked: false, bookmarkOrder: undefined } : n);
         } else {
-            // Bookmark (add to end)
             const maxOrder = Math.max(0, ...prev.filter(n => n.isBookmarked).map(n => n.bookmarkOrder || 0));
             return prev.map(n => n.id === id ? { ...n, isBookmarked: true, bookmarkOrder: maxOrder + 1 } : n);
         }
@@ -541,24 +557,20 @@ export default function App() {
 
   const handleReorderBookmark = (draggedId: string, targetId: string) => {
     setNotes((prev: Note[]) => {
-        // Get all bookmarked notes sorted by current order
         const bookmarked = prev.filter(n => n.isBookmarked).sort((a, b) => (a.bookmarkOrder || 0) - (b.bookmarkOrder || 0));
         const draggedIndex = bookmarked.findIndex(n => n.id === draggedId);
         const targetIndex = bookmarked.findIndex(n => n.id === targetId);
 
         if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) return prev;
 
-        // Move item in array
         const item = bookmarked[draggedIndex];
         const newOrderList = [...bookmarked];
         newOrderList.splice(draggedIndex, 1);
         newOrderList.splice(targetIndex, 0, item);
 
-        // Create a map of id -> newOrder
         const orderMap = new Map();
         newOrderList.forEach((n, idx) => orderMap.set(n.id, idx));
 
-        // Update all notes
         return prev.map(n => {
             if (orderMap.has(n.id)) {
                 return { ...n, bookmarkOrder: orderMap.get(n.id) };
@@ -569,16 +581,36 @@ export default function App() {
   };
 
   const handleUpdateNote = (id: string, updates: Partial<Note>) => {
-    setNotes((prev: Note[]) => prev.map((n) => (n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n)));
+    setNotes((prev: Note[]) => {
+        const oldNote = prev.find(n => n.id === id);
+        if (!oldNote) return prev;
+        
+        // Handle Rename/Move: Queue RENAME (Move) instead of Delete+Create
+        if (
+            (updates.title && updates.title !== oldNote.title) || 
+            (updates.folderId !== undefined && updates.folderId !== oldNote.folderId)
+        ) {
+             const oldPath = getNotePath(oldNote.title, oldNote.folderId, folders);
+             
+             // Calculate new path based on updates merging with old state
+             const newTitle = updates.title !== undefined ? updates.title : oldNote.title;
+             const newFolderId = updates.folderId !== undefined ? updates.folderId : oldNote.folderId;
+             const newPath = getNotePath(newTitle, newFolderId, folders);
+
+             if (oldPath !== newPath) {
+                 queueRename(oldPath, newPath);
+             }
+        }
+
+        return prev.map((n) => (n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n));
+    });
   };
 
   const handleRefactorLinks = (oldTitle: string, newTitle: string) => {
-    // Escape regex characters in old title
     const escapedOldTitle = oldTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`\\[\\[${escapedOldTitle}\\]\\]`, 'g');
     
     setNotes((prev: Note[]) => prev.map(note => {
-      // Only update if it contains the link
       if (note.content.match(regex)) {
         return {
           ...note,
@@ -591,7 +623,18 @@ export default function App() {
   };
 
   const handleMoveNote = (noteId: string, folderId: string | null) => {
-    setNotes((prev: Note[]) => prev.map(n => n.id === noteId ? { ...n, folderId, updatedAt: Date.now() } : n));
+    setNotes((prev: Note[]) => {
+        const note = prev.find(n => n.id === noteId);
+        if (note && note.folderId !== folderId) {
+            // Queue Rename (Move)
+            const oldPath = getNotePath(note.title, note.folderId, folders);
+            const newPath = getNotePath(note.title, folderId, folders);
+            if (oldPath !== newPath) {
+                queueRename(oldPath, newPath);
+            }
+        }
+        return prev.map(n => n.id === noteId ? { ...n, folderId, updatedAt: Date.now() } : n);
+    });
   };
 
   const handleMoveFolder = (folderId: string, newParentId: string | null) => {
@@ -603,6 +646,18 @@ export default function App() {
               return;
           }
       }
+      
+      // Queue Rename (Move) for Folder
+      const oldPath = getFolderPath(folderId, folders);
+      
+      // Simulate new state
+      const simulatedFolders = folders.map(f => f.id === folderId ? { ...f, parentId: newParentId } : f);
+      const newPath = getFolderPath(folderId, simulatedFolders);
+
+      if (oldPath !== newPath) {
+          queueRename(oldPath, newPath);
+      }
+
       setFolders((prev: Folder[]) => prev.map(f => f.id === folderId ? { ...f, parentId: newParentId } : f));
   };
 
@@ -729,7 +784,6 @@ export default function App() {
   const canGoBack = history[activePaneIndex]?.currentIndex > 0;
   const canGoForward = history[activePaneIndex]?.currentIndex < (history[activePaneIndex]?.stack.length - 1);
 
-  // Resizing Handlers
   const startResizingSidebar = (e: React.MouseEvent) => {
       e.preventDefault();
       isResizingSidebar.current = true;
@@ -758,7 +812,6 @@ export default function App() {
               setSidebarWidth(newWidth);
           }
       } else if (isResizingSplit.current && panes[1] !== null) {
-          // Calculate percentage based on available width (viewport - sidebar)
           const availableWidth = window.innerWidth - (sidebarVisible ? sidebarWidth : 0);
           const relativeX = e.clientX - (sidebarVisible ? sidebarWidth : 0);
           const newRatio = relativeX / availableWidth;
@@ -768,15 +821,12 @@ export default function App() {
       }
   };
 
-  // Keyboard Shortcuts via Ref to avoid stale closures
   const shortcutHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
 
-  // Update the ref logic on every render to capture fresh closures (for handleCreateNote, notes state, etc)
   useEffect(() => {
     shortcutHandlerRef.current = (e: KeyboardEvent) => {
         const isMod = e.metaKey || e.ctrlKey;
         
-        // Navigation: Mod + [ or Alt + Left / Mod + ] or Alt + Right
         if ((isMod && e.key === '[') || (e.altKey && e.key === 'ArrowLeft')) {
             e.preventDefault();
             goBack();
@@ -785,37 +835,31 @@ export default function App() {
             goForward();
         }
 
-        // New Note: Mod + N
         if (isMod && e.key.toLowerCase() === 'n') {
             e.preventDefault();
             handleCreateNote();
         }
 
-        // Daily Note: Mod + D
         if (isMod && e.key.toLowerCase() === 'd') {
             e.preventDefault();
             handleOpenDailyNote();
         }
 
-        // Manual Sync: Mod + S
         if (isMod && e.key.toLowerCase() === 's') {
-            e.preventDefault(); // Prevent browser save dialog
-            handleSyncPush();
+            e.preventDefault(); 
+            handleSync();
         }
 
-        // Toggle Sidebar: Mod + \
         if (isMod && e.key === '\\') {
             e.preventDefault();
             setSidebarVisible((prev: boolean) => !prev);
         }
 
-        // Show Shortcuts: Mod + ? (or /)
         if (isMod && (e.key === '?' || e.key === '/')) {
             e.preventDefault();
             setShowShortcuts((prev: boolean) => !prev);
         }
 
-        // Show Tasks: Alt + T (Option + T)
         if (e.altKey && e.key.toLowerCase() === 't') {
             e.preventDefault();
             setShowTasks((prev: boolean) => {
@@ -826,7 +870,7 @@ export default function App() {
             });
         }
     };
-  }); // No dependencies -> runs on every render
+  }); 
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -838,7 +882,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Sort Button Logic for Settings
   const getSortIcon = (field: SortField) => {
       if (sortField !== field) return null;
       return sortDirection === 'asc' ? <ArrowUp size={12} className="ml-1" /> : <ArrowDown size={12} className="ml-1" />;
@@ -890,7 +933,6 @@ export default function App() {
         onToggleFolderExpand={handleToggleFolderExpand}
       />
 
-      {/* Sidebar Resizer - Only visible on desktop when sidebar is open */}
       {sidebarVisible && (
         <div 
             className="w-px bg-gray-200 dark:bg-slate-800 hover:w-1 hover:bg-indigo-500 cursor-col-resize transition-all z-20 flex-shrink-0 hidden md:block"
@@ -899,7 +941,6 @@ export default function App() {
       )}
 
       <div className="flex-1 flex flex-col h-full min-w-0">
-        {/* Top Bar */}
         <div className="h-10 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between px-4 bg-gray-50 dark:bg-slate-900 gap-2 shrink-0 transition-colors duration-200">
             <div className="flex items-center gap-2">
                 <button
@@ -916,7 +957,6 @@ export default function App() {
                     <PanelLeft size={18} />
                 </button>
                 
-                {/* Navigation Buttons */}
                 <div className="flex items-center bg-gray-200 dark:bg-slate-800 rounded ml-2">
                     <button 
                         onClick={goBack}
@@ -937,7 +977,6 @@ export default function App() {
                     </button>
                 </div>
 
-                {/* Daily Note Button */}
                 <button
                     onClick={handleOpenDailyNote}
                     className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
@@ -946,7 +985,6 @@ export default function App() {
                     <Calendar size={18} />
                 </button>
 
-                {/* Tasks Button */}
                 <button
                     onClick={() => setShowTasks(true)}
                     className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
@@ -955,7 +993,6 @@ export default function App() {
                     <CheckSquare size={18} />
                 </button>
 
-                {/* New Note Button */}
                 <button
                     onClick={handleCreateNote}
                     className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
@@ -964,9 +1001,8 @@ export default function App() {
                     <Plus size={18} />
                 </button>
 
-                {/* Sync Button & Indicator */}
                 <button
-                    onClick={handleSyncPush}
+                    onClick={handleSync}
                     disabled={!dropboxToken || syncStatus === 'syncing'}
                     className={`p-1 rounded transition-colors ml-1 flex items-center justify-center 
                         ${!dropboxToken 
@@ -1013,9 +1049,7 @@ export default function App() {
             </div>
         </div>
 
-        {/* Main Workspace */}
         <div className="flex-1 flex overflow-hidden relative">
-          {/* Pane 1 */}
           <div 
             className={`flex flex-col min-w-0 transition-colors duration-200 ${activePaneIndex === 0 ? 'ring-1 ring-inset ring-indigo-500/30 z-10' : ''}`}
             onClick={() => setActivePaneIndex(0)}
@@ -1036,7 +1070,6 @@ export default function App() {
             )}
           </div>
 
-          {/* Split Resizer */}
           {panes[1] !== null && (
                <div 
                    className="w-px bg-gray-200 dark:bg-slate-800 hover:w-1 hover:bg-indigo-500 cursor-col-resize transition-all z-20 flex-shrink-0"
@@ -1044,7 +1077,6 @@ export default function App() {
                />
           )}
 
-          {/* Pane 2 */}
           {panes[1] !== null && (
              <div 
                 className={`flex flex-col min-w-0 transition-colors duration-200 ${activePaneIndex === 1 ? 'ring-1 ring-inset ring-indigo-500/30 z-10' : ''}`}
@@ -1069,7 +1101,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowSettings(false)}></div>
@@ -1081,7 +1112,6 @@ export default function App() {
                     </button>
                 </div>
 
-                {/* Note Sorting */}
                 <div className="space-y-3">
                     <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-slate-300">
                         <ArrowDownAz size={16} />
@@ -1094,7 +1124,6 @@ export default function App() {
                     </div>
                 </div>
 
-                {/* Theme Toggle */}
                 <div className="space-y-3">
                     <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-slate-300">
                         <Monitor size={16} />
@@ -1124,7 +1153,6 @@ export default function App() {
                     </div>
                 </div>
 
-                {/* Font Size */}
                 <div className="space-y-3">
                     <div className="flex items-center justify-between text-sm font-semibold text-gray-700 dark:text-slate-300">
                         <div className="flex items-center gap-2">
@@ -1148,7 +1176,6 @@ export default function App() {
                     </div>
                 </div>
 
-                {/* Daily Notes Settings */}
                 <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-slate-800">
                     <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-slate-300">
                         <Calendar size={16} />
@@ -1193,7 +1220,6 @@ export default function App() {
                     </div>
                 </div>
 
-                {/* Sync Settings */}
                 <div className="space-y-3 pt-4 border-t border-gray-200 dark:border-slate-800">
                     <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-slate-300">
                         <Cloud size={16} />
@@ -1215,31 +1241,19 @@ export default function App() {
                                         <LogOut size={12} /> Disconnect
                                     </button>
                                 </div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button 
-                                        onClick={handleSyncPush}
-                                        disabled={syncStatus === 'syncing'}
-                                        className="flex items-center justify-center gap-2 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 rounded-md text-xs font-medium transition-colors"
-                                        title="Overwrite Dropbox data with local data"
-                                    >
-                                        <Upload size={14} /> Push (Upload)
-                                    </button>
-                                    <button 
-                                        onClick={handleSyncPull}
-                                        disabled={syncStatus === 'syncing'}
-                                        className="flex items-center justify-center gap-2 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 rounded-md text-xs font-medium transition-colors"
-                                        title="Overwrite local data with Dropbox data"
-                                    >
-                                        <Download size={14} /> Pull (Download)
-                                    </button>
-                                </div>
+                                
+                                <button 
+                                    onClick={handleSync}
+                                    disabled={syncStatus === 'syncing'}
+                                    className="w-full flex items-center justify-center gap-2 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 rounded-md text-xs font-medium transition-colors"
+                                    title="Smart Sync (Upload & Download changes)"
+                                >
+                                    <RefreshCw size={14} className={syncStatus === 'syncing' ? 'animate-spin' : ''} /> Sync Now
+                                </button>
+                                
                                 {syncMessage && (
                                     <div className={`text-xs text-center ${syncStatus === 'error' ? 'text-red-500' : 'text-slate-500'}`}>
-                                        {syncStatus === 'syncing' ? (
-                                            <span className="flex items-center justify-center gap-1">
-                                                <RefreshCw size={12} className="animate-spin" /> Syncing...
-                                            </span>
-                                        ) : syncMessage}
+                                        {syncMessage}
                                     </div>
                                 )}
                             </>
@@ -1250,7 +1264,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Shortcuts Modal (triggered by Ctrl+?) */}
       {showShortcuts && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowShortcuts(false)}></div>
@@ -1280,7 +1293,6 @@ export default function App() {
         </div>
       )}
       
-      {/* Tasks Modal (triggered by Alt+T) */}
       {showTasks && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
              <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={handleCloseTasks}></div>
@@ -1324,7 +1336,6 @@ export default function App() {
                                  </div>
                                  <div className="pl-4 space-y-1">
                                      {tasks.map((task) => {
-                                         // Show all, but styling differs for completed
                                          return (
                                              <div key={`${note.id}-${task.lineIndex}`} className={`flex items-start gap-3 group ${task.isChecked ? 'opacity-40 hover:opacity-100 transition-opacity' : ''}`}>
                                                  <input 
@@ -1336,7 +1347,6 @@ export default function App() {
                                                  <span 
                                                     className={`text-sm text-slate-700 dark:text-slate-300 ${task.isChecked ? 'line-through' : ''}`}
                                                     dangerouslySetInnerHTML={{ 
-                                                        // Simple markdown rendering for task content (bold, italic, code)
                                                         __html: task.content
                                                             .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
                                                             .replace(/\*(.*?)\*/g, '<i>$1</i>')
@@ -1356,7 +1366,6 @@ export default function App() {
           </div>
       )}
 
-      {/* Confirm Modal */}
       {confirmModal.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} })}></div>
@@ -1381,7 +1390,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Input Modal */}
       {inputModal.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setInputModal({ isOpen: false, title: '', value: '', onConfirm: () => {} })}></div>

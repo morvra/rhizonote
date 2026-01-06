@@ -1,4 +1,4 @@
-import { Dropbox } from 'dropbox';
+import { Dropbox, files } from 'dropbox';
 import { Note, Folder } from '../types';
 
 const CLIENT_ID = '2reog117jgm9gmw';
@@ -8,11 +8,35 @@ export interface SyncData {
   folders: Folder[];
   version: number;
   timestamp: number;
+  syncLog: string[]; // For UI feedback
+}
+
+export interface RenameOperation {
+    from: string;
+    to: string;
 }
 
 // Helper: Sanitize filename to avoid invalid characters in Dropbox paths
-const sanitizeFilename = (name: string) => {
+export const sanitizeFilename = (name: string) => {
   return name.replace(/[/\\?%*:|"<>]/g, '-');
+};
+
+// Helper: Get full path for a folder
+export const getFolderPath = (folderId: string | null, folders: Folder[]): string => {
+    if (!folderId) return '';
+    const folder = folders.find(f => f.id === folderId);
+    if (!folder) return '';
+    const parentPath = getFolderPath(folder.parentId, folders);
+    return parentPath
+        ? `${parentPath}/${sanitizeFilename(folder.name)}`
+        : `/${sanitizeFilename(folder.name)}`;
+};
+
+// Helper: Generate full path for a note
+export const getNotePath = (noteTitle: string, folderId: string | null, folders: Folder[]) => {
+    const folderPath = getFolderPath(folderId, folders);
+    const safeTitle = sanitizeFilename(noteTitle) || 'Untitled';
+    return `${folderPath}/${safeTitle}.md`;
 };
 
 // Helper: Process requests in chunks to avoid hitting browser/API limits
@@ -23,7 +47,6 @@ const chunkArray = <T>(array: T[], size: number): T[][] => {
 };
 
 export const getDropboxAuthUrl = () => {
-  // Construct redirect URI from current location, including pathname
   const redirectUri = window.location.href.split('#')[0].split('?')[0];
   return `https://www.dropbox.com/oauth2/authorize?client_id=${CLIENT_ID}&response_type=token&redirect_uri=${encodeURIComponent(redirectUri)}`;
 };
@@ -31,95 +54,76 @@ export const getDropboxAuthUrl = () => {
 export const parseAuthTokenFromUrl = (): string | null => {
   const hash = window.location.hash;
   if (!hash) return null;
-  
   const params = new URLSearchParams(hash.substring(1));
   return params.get('access_token');
 };
 
 /**
- * Uploads all notes as individual Markdown files to Dropbox.
- * Folder structure is preserved.
- * Metadata (ID, created, etc.) is stored in YAML Frontmatter.
+ * Performs a smart two-way sync.
+ * 1. Process queued deletions.
+ * 2. Process queued renames (Moves).
+ * 3. Downloads file list from Dropbox.
+ * 4. Compares with local notes based on PATH.
+ * 5. Syncs diffs.
  */
-export const uploadDataToDropbox = async (accessToken: string, notes: Note[], folders: Folder[]) => {
+export const syncDropboxData = async (
+    accessToken: string, 
+    localNotes: Note[], 
+    localFolders: Folder[], 
+    pathsToDelete: string[] = [],
+    renames: RenameOperation[] = []
+): Promise<SyncData> => {
   const dbx = new Dropbox({ accessToken });
-  
-  // 1. Build a map of FolderID -> Full Path String
-  const folderPathMap = new Map<string, string>();
-
-  // Recursive function to resolve path for a given folder ID
-  const getFolderPath = (folderId: string | null): string => {
-      if (!folderId) return '';
-      if (folderPathMap.has(folderId)) return folderPathMap.get(folderId)!;
-
-      const folder = folders.find(f => f.id === folderId);
-      if (!folder) return ''; // Should not happen if data integrity is good
-
-      const parentPath = getFolderPath(folder.parentId);
-      // Construct path: /Parent/Child
-      const myPath = parentPath 
-        ? `${parentPath}/${sanitizeFilename(folder.name)}` 
-        : `/${sanitizeFilename(folder.name)}`;
-      
-      folderPathMap.set(folderId, myPath);
-      return myPath;
-  };
-
-  // Pre-calculate paths for all folders to handle hierarchy
-  folders.forEach(f => getFolderPath(f.id));
-
-  // 2. Prepare upload promises
-  // We divide notes into chunks to prevent "Too Many Requests" or browser hangs
-  const noteChunks = chunkArray(notes, 5); // Upload 5 files at a time
-
-  for (const batch of noteChunks) {
-      const promises = batch.map(async (note) => {
-          const folderPath = note.folderId ? getFolderPath(note.folderId) : '';
-          const safeTitle = sanitizeFilename(note.title) || 'Untitled';
-          const fullPath = `${folderPath}/${safeTitle}.md`;
-
-          // Construct Content with Frontmatter
-          const fileContent = `---
-id: ${note.id}
-title: ${note.title}
-created: ${note.createdAt}
-updated: ${note.updatedAt}
-isBookmarked: ${note.isBookmarked || false}
----
-${note.content}`;
-
-          const blob = new Blob([fileContent], { type: 'text/markdown' });
-
-          try {
-              await dbx.filesUpload({
-                  path: fullPath,
-                  contents: blob,
-                  mode: { '.tag': 'overwrite' } // Overwrite if exists
-              });
-          } catch (e) {
-              console.error(`Failed to upload ${fullPath}`, e);
-              // We continue uploading others even if one fails
-          }
-      });
-
-      await Promise.all(promises);
-  }
-};
-
-/**
- * Downloads all Markdown files from Dropbox and reconstructs the data.
- * Rebuilds Folder objects based on directory structure.
- */
-export const downloadDataFromDropbox = async (accessToken: string): Promise<SyncData | null> => {
-  const dbx = new Dropbox({ accessToken });
+  const log: string[] = [];
 
   try {
-    // 1. List all files recursively
+    // 0a. Process Deletions First
+    if (pathsToDelete.length > 0) {
+        const uniquePaths = Array.from(new Set(pathsToDelete));
+        const delChunks = chunkArray(uniquePaths, 10);
+        for (const batch of delChunks) {
+            await Promise.all(batch.map(async (path) => {
+                try {
+                    await dbx.filesDeleteV2({ path });
+                    log.push(`Deleted remote: ${path}`);
+                } catch (e: any) {
+                    if (e?.error?.error_summary?.includes('path_lookup/not_found')) {
+                        // already gone, fine
+                    } else {
+                        console.error(`Deletion failed for ${path}`, e);
+                        log.push(`Failed delete: ${path}`);
+                    }
+                }
+            }));
+        }
+    }
+
+    // 0b. Process Renames (Moves)
+    if (renames.length > 0) {
+        // Execute sequentially to respect order dependencies
+        for (const op of renames) {
+            if (op.from === op.to) continue;
+            try {
+                await dbx.filesMoveV2({
+                    from_path: op.from,
+                    to_path: op.to,
+                    autorename: false // Fail if target exists, usually desired for sync integrity
+                });
+                log.push(`Renamed remote: ${op.from} -> ${op.to}`);
+            } catch (e: any) {
+                // If from_path not found, maybe it was deleted or never uploaded?
+                // If to_path exists, it's a conflict.
+                console.error(`Rename failed for ${op.from} -> ${op.to}`, e);
+                log.push(`Failed rename: ${op.from} -> ${op.to}`);
+            }
+        }
+    }
+
+    // 1. Fetch Remote State
     let entries: any[] = [];
     let hasMore = true;
     let cursor = null;
 
-    // Fetch all entries (pagination)
     while (hasMore) {
         const result: any = cursor 
             ? await dbx.filesListFolderContinue({ cursor })
@@ -130,71 +134,106 @@ export const downloadDataFromDropbox = async (accessToken: string): Promise<Sync
         cursor = result.result.cursor;
     }
 
-    // 2. Reconstruct Folders from Paths
-    const newFolders: Folder[] = [];
-    // Map full lowercase path to a newly generated ID
-    const pathIdMap = new Map<string, string>(); 
+    const remoteFileEntries = entries.filter(e => e['.tag'] === 'file' && e.name.endsWith('.md'));
+    const remoteFolderEntries = entries.filter(e => e['.tag'] === 'folder');
 
-    // Filter only folders and sort by path length to ensure parents are processed before children
-    const folderEntries = entries
-        .filter(e => e['.tag'] === 'folder')
-        .sort((a, b) => a.path_lower.length - b.path_lower.length);
-
-    folderEntries.forEach(entry => {
-        const pathLower = entry.path_lower; // e.g. "/parent/child"
-        const name = entry.name;
-        
-        // Determine Parent ID
-        const lastSlash = pathLower.lastIndexOf('/');
-        const parentPathLower = pathLower.substring(0, lastSlash); // e.g. "/parent"
-        
-        // If parentPathLower is empty string, it's root (parentId = null). 
-        // Otherwise, look up the ID we generated for the parent.
-        const parentId = parentPathLower ? (pathIdMap.get(parentPathLower) || null) : null;
-
-        const newId = Math.random().toString(36).substr(2, 9);
-        pathIdMap.set(pathLower, newId);
-
-        newFolders.push({
-            id: newId,
-            name: name,
-            parentId: parentId,
-            createdAt: Date.now() // Dropbox doesn't easy provide folder creation time
+    // 2. Reconstruct Remote Folder Structure
+    const mergedFolders = [...localFolders];
+    
+    // Calculate all local folder paths for matching
+    const localFolderPaths = new Map<string, string>(); // Path (lower) -> ID
+    const mapLocalFolderPaths = (parentId: string | null, parentPath: string) => {
+        const children = localFolders.filter(f => f.parentId === parentId);
+        children.forEach(c => {
+            const myPath = parentPath === '' ? `/${sanitizeFilename(c.name).toLowerCase()}` : `${parentPath}/${sanitizeFilename(c.name).toLowerCase()}`;
+            localFolderPaths.set(myPath, c.id);
+            mapLocalFolderPaths(c.id, myPath);
         });
+    };
+    mapLocalFolderPaths(null, '');
+
+    // Process Remote Folders
+    remoteFolderEntries.sort((a, b) => a.path_lower.length - b.path_lower.length).forEach((entry: any) => {
+        if (!localFolderPaths.has(entry.path_lower)) {
+            const name = entry.name;
+            const lastSlash = entry.path_lower.lastIndexOf('/');
+            const parentPath = entry.path_lower.substring(0, lastSlash);
+            
+            const parentId = parentPath === '' ? null : (localFolderPaths.get(parentPath) || null);
+            const newId = Math.random().toString(36).substr(2, 9);
+            
+            mergedFolders.push({
+                id: newId,
+                name: name,
+                parentId: parentId,
+                createdAt: Date.now()
+            });
+            localFolderPaths.set(entry.path_lower, newId);
+            log.push(`Created local folder: ${entry.path_display}`);
+        }
     });
 
-    // 3. Download and Parse Notes
-    const newNotes: Note[] = [];
-    const fileEntries = entries.filter(e => e['.tag'] === 'file' && e.name.endsWith('.md'));
+    // 3. Compare Files and Notes
+    const notesToUpload: Note[] = [];
+    const filesToDownload: any[] = [];
+    const mergedNotes = [...localNotes];
 
-    // Download in chunks
-    const fileChunks = chunkArray(fileEntries, 5);
+    const remoteFileMap = new Map<string, any>();
+    remoteFileEntries.forEach((f: any) => remoteFileMap.set(f.path_lower, f));
 
-    for (const batch of fileChunks) {
-        const promises = batch.map(async (entry) => {
+    // Check Local Notes against Remote
+    for (const note of localNotes) {
+        const path = getNotePath(note.title, note.folderId, mergedFolders);
+        const pathLower = path.toLowerCase();
+        const remoteFile = remoteFileMap.get(pathLower);
+
+        if (!remoteFile) {
+            notesToUpload.push(note);
+            log.push(`Queued upload: ${note.title} (New Local)`);
+        } else {
+            const remoteTime = new Date(remoteFile.client_modified).getTime();
+            const localTime = note.updatedAt;
+
+            // Allow 2 second buffer
+            if (localTime > remoteTime + 2000) {
+                notesToUpload.push(note);
+                log.push(`Queued upload: ${note.title} (Local Newer)`);
+            } else if (remoteTime > localTime + 2000) {
+                filesToDownload.push(remoteFile);
+                log.push(`Queued download: ${note.title} (Remote Newer)`);
+            }
+            remoteFileMap.delete(pathLower);
+        }
+    }
+
+    // Remaining remote files -> Download
+    remoteFileMap.forEach((remoteFile) => {
+        filesToDownload.push(remoteFile);
+        log.push(`Queued download: ${remoteFile.name} (New Remote)`);
+    });
+
+    // 4. Execute Downloads
+    const dlChunks = chunkArray(filesToDownload, 5);
+    for (const batch of dlChunks) {
+        await Promise.all(batch.map(async (entry) => {
             try {
                 const r = await dbx.filesDownload({ path: entry.path_lower });
                 const blob = (r.result as any).fileBlob;
                 const text = await blob.text();
 
-                // Parse Frontmatter
-                // Matches: --- (newline) content (newline) --- (newline) rest
+                // Parse Metadata
                 const match = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)?$/);
-                
                 let metadata: any = {};
                 let content = text;
 
                 if (match) {
                     const metaBlock = match[1];
-                    content = match[2] || ''; // capture group 2 might be undefined if empty
-                    
+                    content = match[2] || '';
                     metaBlock.split('\n').forEach((line: string) => {
                         const colonIndex = line.indexOf(':');
                         if (colonIndex > -1) {
                             const key = line.substring(0, colonIndex).trim();
                             const val = line.substring(colonIndex + 1).trim();
-                            
-                            // Simple type conversion
                             if (val === 'true') metadata[key] = true;
                             else if (val === 'false') metadata[key] = false;
                             else if (!isNaN(Number(val)) && key !== 'title') metadata[key] = Number(val);
@@ -203,46 +242,80 @@ export const downloadDataFromDropbox = async (accessToken: string): Promise<Sync
                     });
                 }
 
-                // Determine Folder ID based on file path
                 const lastSlash = entry.path_lower.lastIndexOf('/');
                 const parentPathLower = entry.path_lower.substring(0, lastSlash);
-                const folderId = pathIdMap.get(parentPathLower) || null;
+                const folderId = localFolderPaths.get(parentPathLower) || null;
 
-                // Fallback for ID if not in frontmatter (e.g. externally created file)
                 const noteId = metadata.id || Math.random().toString(36).substr(2, 9);
-                // Fallback for title if not in frontmatter
                 const noteTitle = metadata.title || entry.name.replace('.md', '');
 
-                newNotes.push({
+                const newNoteObj: Note = {
                     id: noteId,
                     title: noteTitle,
                     content: content,
                     folderId: folderId,
                     isBookmarked: !!metadata.isBookmarked,
                     createdAt: metadata.created || Date.now(),
-                    updatedAt: metadata.updated || Date.now(),
-                });
+                    updatedAt: new Date(entry.client_modified).getTime(),
+                };
+                
+                const existingIdx = mergedNotes.findIndex(n => n.id === newNoteObj.id);
+                if (existingIdx > -1) {
+                    mergedNotes[existingIdx] = newNoteObj;
+                } else {
+                    const samePathIdx = mergedNotes.findIndex(n => {
+                        return n.title === newNoteObj.title && n.folderId === newNoteObj.folderId;
+                    });
+                    if (samePathIdx > -1) {
+                         mergedNotes[samePathIdx] = newNoteObj;
+                    } else {
+                        mergedNotes.push(newNoteObj);
+                    }
+                }
 
             } catch (e) {
-                console.error(`Error downloading ${entry.path_display}`, e);
+                console.error(`Download failed for ${entry.path_display}`, e);
             }
-        });
-        await Promise.all(promises);
+        }));
+    }
+
+    // 5. Execute Uploads
+    const ulChunks = chunkArray(notesToUpload, 5);
+    for (const batch of ulChunks) {
+        await Promise.all(batch.map(async (note) => {
+            const path = getNotePath(note.title, note.folderId, mergedFolders);
+            const fileContent = `---
+id: ${note.id}
+title: ${note.title}
+created: ${note.createdAt}
+updated: ${note.updatedAt}
+isBookmarked: ${note.isBookmarked || false}
+---
+${note.content}`;
+            const blob = new Blob([fileContent], { type: 'text/markdown' });
+
+            try {
+                await dbx.filesUpload({
+                    path: path,
+                    contents: blob,
+                    mode: { '.tag': 'overwrite' }
+                });
+            } catch (e) {
+                console.error(`Upload failed for ${path}`, e);
+            }
+        }));
     }
 
     return {
-        notes: newNotes,
-        folders: newFolders,
+        notes: mergedNotes,
+        folders: mergedFolders,
         version: 1,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        syncLog: log
     };
 
   } catch (error: any) {
     console.error("Dropbox Sync Error:", error);
-    // If folder doesn't exist yet (first sync), return empty valid structure
-    if (error.error && error.error['.tag'] === 'path') {
-         return { notes: [], folders: [], version: 1, timestamp: Date.now() };
-    }
     throw error;
   }
 };
