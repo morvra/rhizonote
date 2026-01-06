@@ -98,7 +98,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const prevSelectionRef = useRef<number>(0);
 
   // Track current cursor line to styling
-  const [currentLineIndex, setCurrentLineIndex] = useState<number>(0);
+  const [currentLineIndex, setCurrentLineIndex] = useState<number>(-1);
   
   // Ref to store cursor position that needs to be restored after a render
   const pendingCursorRef = useRef<number | null>(null);
@@ -120,6 +120,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
   // Rename & Refactor State
   const [originalTitle, setOriginalTitle] = useState(note.title);
+
+  // Flag to track link clicks to ignore subsequent mouseUp events
+  const isLinkClickRef = useRef(false);
 
   // Track previous note ID to reset state immediately when note changes
   const prevNoteIdRef = useRef(note.id);
@@ -194,7 +197,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
           
           // Reset internal tracking
           prevSelectionRef.current = 0;
-          setCurrentLineIndex(0);
+          setCurrentLineIndex(-1); // Changed from 0 to -1 to avoid activating first line by default
       }
       if (backdropRef.current) {
           // Also reset backdrop scroll if it was scrollable (though it usually mirrors textarea)
@@ -415,6 +418,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
               if (url || wikiLink) {
                   e.preventDefault(); // This stops the cursor from moving and focusing
                   e.stopPropagation(); // Stop bubbling
+                  
+                  isLinkClickRef.current = true; // Mark as link click so mouseUp ignores it
+                  
                   if (url) window.open(url, '_blank');
                   if (wikiLink) onLinkClick(wikiLink);
                   return;
@@ -424,9 +430,15 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
           // If no link, capture cursor position normally
           prevSelectionRef.current = textareaRef.current.selectionStart;
       }
+      isLinkClickRef.current = false;
   };
 
   const handleMouseUp = () => {
+    if (isLinkClickRef.current) {
+        isLinkClickRef.current = false;
+        return; // Ignore mouseUp after a link click to prevent activating the line
+    }
+
     updateSelectionMenu();
     // Only update visual line index, don't update logical selection history
     // This prevents "click" handler from thinking we've already visited this line
