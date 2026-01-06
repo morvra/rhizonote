@@ -245,19 +245,54 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     const lineText = value.slice(lineStart, lineEnd);
     const relIndex = cursorPosition - lineStart;
     
-    // Regex: Matches `code spans` OR [[links]] OR urls
-    // Exclude ')' from URL match to support [text](url) format
-    const regex = /(`[^`]+`|\[\[[^\]]+\]\]|https?:\/\/[^\s)]+)/g;
+    // Regex: Matches `code spans` OR ![image](url) OR [link](url) OR [[links]] OR raw-urls
+    // Note: The order matters. Image/Link syntax should be checked before raw urls.
+    const regex = /(`[^`]+`|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\[\[[^\]]+\]\]|https?:\/\/[^\s)]+)/g;
     let match;
     
     while ((match = regex.exec(lineText)) !== null) {
         const start = match.index;
         const end = start + match[0].length;
         
-        // Check if cursor is strictly inside the match (start < cursor <= end)
+        // Check if cursor is strictly inside the match
         if (relIndex > start && relIndex <= end) {
              const text = match[0];
              if (text.startsWith('`')) return null; // It's code
+             
+             // Image ![alt](url)
+             if (text.startsWith('![')) {
+                 const urlMatch = text.match(/!\[([^\]]*)\]\(([^)]+)\)/);
+                 if (urlMatch) {
+                     // Structure: ![ (2) + alt + ]( (2) + url + ) (1)
+                     const altLen = urlMatch[1].length;
+                     const url = urlMatch[2];
+                     const urlStart = start + 2 + altLen + 2;
+                     const urlEnd = urlStart + url.length;
+                     
+                     if (relIndex >= urlStart && relIndex <= urlEnd) {
+                         return { type: 'url', content: url };
+                     }
+                     return null; // Cursor is in alt text or brackets, ignore
+                 }
+             }
+
+             // Markdown Link [text](url)
+             if (text.startsWith('[') && !text.startsWith('[[')) {
+                 const urlMatch = text.match(/\[([^\]]+)\]\(([^)]+)\)/);
+                 if (urlMatch) {
+                     // Structure: [ (1) + text + ]( (2) + url + ) (1)
+                     const textLen = urlMatch[1].length;
+                     const url = urlMatch[2];
+                     const urlStart = start + 1 + textLen + 2;
+                     const urlEnd = urlStart + url.length;
+
+                     if (relIndex >= urlStart && relIndex <= urlEnd) {
+                         return { type: 'url', content: url };
+                     }
+                     return null; // Cursor is in label or brackets, ignore
+                 }
+             }
+             
              if (text.startsWith('[[')) return { type: 'wiki', content: text.slice(2, -2) }; // It's a wiki link
              if (text.startsWith('http')) return { type: 'url', content: text }; // It's a URL
         }
@@ -670,7 +705,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
           
           // Regex to identify code spans, wiki links, OR URLs
           // Exclude ')' from URL match to support [text](url) format
-          const regex = /(`[^`]+`|\[\[[^\]]+\]\]|https?:\/\/[^\s)]+)/g;
+          const regex = /(`[^`]+`|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\[\[[^\]]+\]\]|https?:\/\/[^\s)]+)/g;
           const parts = line.split(regex);
           
           if (parts.length > 1) {
@@ -678,6 +713,52 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                  if (part.startsWith('`')) {
                      // Code span
                      return <span key={i} className="text-amber-600 dark:text-amber-200">{part}</span>;
+                 }
+                 if (part.startsWith('![') && part.includes('](') && part.endsWith(')')) {
+                    // Image Syntax Highlight: ![alt](url)
+                    const match = part.match(/!\[([^\]]*)\]\(([^)]+)\)/);
+                    if (match) {
+                        const alt = match[1];
+                        const url = match[2];
+                        return (
+                            <span key={i} className="text-amber-600 dark:text-amber-500">
+                                {'!['}{alt}{']('}
+                                <span 
+                                    className={`${isActive ? '' : 'underline cursor-pointer pointer-events-auto'}`}
+                                    data-url={url}
+                                    data-line-index={index}
+                                >
+                                    {url}
+                                </span>
+                                {')'}
+                            </span>
+                        );
+                    }
+                    return <span key={i} className="text-amber-600 dark:text-amber-500">{part}</span>;
+                 }
+                 if (part.startsWith('[') && !part.startsWith('[[') && part.includes('](') && part.endsWith(')')) {
+                    // Link Syntax Highlight: [text](url)
+                    const match = part.match(/\[([^\]]+)\]\(([^)]+)\)/);
+                    if (match) {
+                        const text = match[1];
+                        const url = match[2];
+                        return (
+                            <span key={i} className="text-indigo-600 dark:text-indigo-400">
+                                {'['}
+                                <span className="text-indigo-600 dark:text-indigo-400">{text}</span>
+                                {']('}
+                                <span 
+                                    className={`${isActive ? '' : 'underline cursor-pointer pointer-events-auto'}`}
+                                    data-url={url}
+                                    data-line-index={index}
+                                >
+                                    {url}
+                                </span>
+                                {')'}
+                            </span>
+                        );
+                    }
+                    return <span key={i} className="text-indigo-600 dark:text-indigo-400">{part}</span>;
                  }
                  if (part.startsWith('[[') && part.endsWith(']]')) {
                      const title = part.slice(2, -2);

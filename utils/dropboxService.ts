@@ -12,7 +12,10 @@ export interface SyncData {
 }
 
 export const getDropboxAuthUrl = () => {
-  const redirectUri = window.location.origin; // Current domain
+  // Construct redirect URI from current location, including pathname (for GitHub Pages subdirs)
+  // but excluding query params and hash.
+  const redirectUri = window.location.href.split('#')[0].split('?')[0];
+  
   // Using Implicit Grant for client-side only app
   return `https://www.dropbox.com/oauth2/authorize?client_id=${CLIENT_ID}&response_type=token&redirect_uri=${encodeURIComponent(redirectUri)}`;
 };
