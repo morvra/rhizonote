@@ -366,6 +366,8 @@ export const syncDropboxData = async (
                 notesToUpload.push(localNote);
                 log.push(`Will upload (new): ${localNote.title}`);
             }
+            // CRITICAL FIX: Add local note to final map
+            finalNotesMap.set(localNote.id, localNote);
         } else {
             // Note exists both locally and remotely
             const remoteNote = remoteData.note;
@@ -408,6 +410,8 @@ export const syncDropboxData = async (
                 }
             } else if (timeDiff <= 2000) {
                 // Timestamps are essentially equal and paths match - no conflict
+                // Keep local version
+                finalNotesMap.set(localNote.id, localNote);
             } else if (localTime > remoteTime) {
                 // Local is newer (same path)
                 notesToUpload.push(localNote);
