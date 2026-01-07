@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import Editor from './components/Editor';
+import CommandPalette, { CommandItem } from './components/CommandPalette';
 import { Note, Folder, SortField, SortDirection, Theme } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS } from './constants';
-import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle, Shuffle } from 'lucide-react';
+import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle, Shuffle, Eye, Bookmark, Terminal } from 'lucide-react';
 import { getDropboxAuthUrl, parseAuthTokenFromUrl, syncDropboxData, getNotePath, getFolderPath, RenameOperation, exchangeCodeForToken } from './utils/dropboxService';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -149,6 +150,7 @@ export default function App() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showTasks, setShowTasks] = useState(uiSettings.showTasks || false);
   const [autoSync, setAutoSync] = useState(uiSettings.autoSync ?? true);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
   // Dropbox State
   const [dropboxToken, setDropboxToken] = useState<string | null>(() => localStorage.getItem(LS_KEY_DB_TOKEN));
@@ -1047,6 +1049,11 @@ export default function App() {
     }
   };
 
+  const handleTogglePreview = () => {
+     // Dispatch a custom event that Editor components listen to
+     window.dispatchEvent(new Event('rhizonote-toggle-preview'));
+  };
+
   const getNoteById = (id: string | null) => notes.find((n) => n.id === id);
 
   const canGoBack = history[activePaneIndex]?.currentIndex > 0;
@@ -1173,6 +1180,12 @@ export default function App() {
                 return true;
             });
         }
+
+        // Command Palette
+        if (isMod && e.key.toLowerCase() === 'k') {
+            e.preventDefault();
+            setIsCommandPaletteOpen(prev => !prev);
+        }
     };
   }); 
 
@@ -1205,6 +1218,33 @@ export default function App() {
      </button>
   );
 
+  // Generate Commands for Palette
+  const commands: CommandItem[] = useMemo(() => {
+    const baseCommands: CommandItem[] = [
+        { id: 'new-note', label: 'Create New Note', icon: <Plus size={16}/>, action: handleCreateNote, shortcut: 'Ctrl+Alt+N', group: 'Actions' },
+        { id: 'daily-note', label: 'Open Daily Note', icon: <Calendar size={16}/>, action: handleOpenDailyNote, shortcut: 'Ctrl+D', group: 'Actions' },
+        { id: 'random-note', label: 'Open Random Note', icon: <Shuffle size={16}/>, action: handleOpenRandomNote, shortcut: 'Alt+R', group: 'Actions' },
+        { id: 'toggle-preview', label: 'Toggle Edit/Preview', icon: <Eye size={16}/>, action: handleTogglePreview, shortcut: 'Ctrl+E', group: 'View' },
+        { id: 'split-view', label: 'Toggle Split View', icon: <Columns size={16}/>, action: toggleSplitView, group: 'View' },
+        { id: 'sync', label: 'Start Sync', icon: <RefreshCw size={16}/>, action: handleSync, shortcut: 'Ctrl+S', group: 'System' },
+        { id: 'tasks', label: 'Show Tasks', icon: <CheckSquare size={16}/>, action: () => setShowTasks(true), shortcut: 'Alt+T', group: 'View' },
+        { id: 'settings', label: 'Open Settings', icon: <Terminal size={16}/>, action: () => setShowSettings(true), group: 'System' },
+    ];
+
+    const bookmarkCommands: CommandItem[] = notes
+        .filter(n => n.isBookmarked && !n.deletedAt)
+        .sort((a, b) => (a.bookmarkOrder || 0) - (b.bookmarkOrder || 0))
+        .map(n => ({
+            id: `bookmark-${n.id}`,
+            label: n.title,
+            icon: <Bookmark size={16} />,
+            action: () => openNote(n.id),
+            group: 'Bookmarks'
+        }));
+
+    return [...baseCommands, ...bookmarkCommands];
+  }, [notes, handleCreateNote, handleOpenDailyNote, handleOpenRandomNote, toggleSplitView, handleSync]);
+
   return (
     <div 
         className={`flex h-screen w-screen overflow-hidden font-sans bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 transition-colors duration-200`}
@@ -1214,6 +1254,12 @@ export default function App() {
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
     >
+      <CommandPalette 
+        isOpen={isCommandPaletteOpen} 
+        onClose={() => setIsCommandPaletteOpen(false)} 
+        commands={commands} 
+      />
+
       <Sidebar
         isOpen={mobileMenuOpen}
         isVisible={sidebarVisible}
@@ -1687,6 +1733,7 @@ export default function App() {
                     </button>
                 </div>
                 <div className="space-y-3">
+                     <ShortcutRow keys={['Ctrl', 'K']} description="Open Command Palette" />
                      <ShortcutRow keys={['Ctrl', 'Alt', 'N']} description="Create New Note" />
                      <ShortcutRow keys={['Ctrl', 'E']} description="Toggle Edit/Preview" />
                      <ShortcutRow keys={['Ctrl', 'D']} description="Open Daily Note" />

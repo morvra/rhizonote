@@ -95,7 +95,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const backdropRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   
-  // Toggle Mode Shortcut (Ctrl+E / Cmd+E)
+  // Toggle Mode Shortcut (Ctrl+E / Cmd+E) and Custom Event Listener
   useEffect(() => {
     const handleWindowKeyDown = (e: KeyboardEvent) => {
         if (!isActive) return;
@@ -104,8 +104,21 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             setMode(prev => prev === 'edit' ? 'preview' : 'edit');
         }
     };
+    
+    // Custom event listener for Command Palette
+    const handleCustomToggle = () => {
+        if (isActive) {
+            setMode(prev => prev === 'edit' ? 'preview' : 'edit');
+        }
+    };
+
     window.addEventListener('keydown', handleWindowKeyDown);
-    return () => window.removeEventListener('keydown', handleWindowKeyDown);
+    window.addEventListener('rhizonote-toggle-preview', handleCustomToggle);
+
+    return () => {
+        window.removeEventListener('keydown', handleWindowKeyDown);
+        window.removeEventListener('rhizonote-toggle-preview', handleCustomToggle);
+    };
   }, [isActive]);
 
   // Track where the cursor *was* before the current interaction
