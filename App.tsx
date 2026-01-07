@@ -1273,7 +1273,7 @@ export default function App() {
             style={{ flex: panes[1] !== null ? splitRatio : 1 }}
           >
             {getNoteById(panes[0]) ? (
-              <div className="flex flex-col h-full pb-16 md:pb-0">
+              <div className="flex flex-col h-full pb-20 md:pb-0">
                 <Editor
                     note={getNoteById(panes[0])!}
                     allNotes={notes}
@@ -1325,7 +1325,7 @@ export default function App() {
       </div>
 
       {/* Mobile Bottom Toolbar (Restored) */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 flex items-center justify-between px-6 pt-2 pb-4">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 flex items-center justify-between px-6 pt-3 pb-5">
         <div className="flex items-center gap-6">
             <button
                 onClick={handleOpenDailyNote}
