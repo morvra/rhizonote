@@ -920,28 +920,25 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             const isOrdered = !!orderedMatch;
             const newListType = isOrdered ? 'ol' : 'ul';
             
-            // Calculate margin for this indent level
-            const marginLeft = indentLevel * 24; // 24px per indent level
-            
             if (!inList) {
                 // Start new list
-                processedLines.push(`<${newListType} class="my-4">`);
+                processedLines.push(`<${newListType} class="my-4 ml-6">`);
                 inList = true;
                 currentIndentLevel = indentLevel;
                 listStack.push({ type: newListType, indent: indentLevel });
             } else {
                 // Check if we need to nest or unnest
                 if (indentLevel > currentIndentLevel) {
-                    // Start nested list
-                    processedLines.push(`<${newListType}>`);
+                    // Start nested list (add margin for additional indentation)
+                    const additionalIndent = (indentLevel - currentIndentLevel) * 24;
+                    processedLines.push(`<${newListType} class="ml-6" style="margin-left: ${additionalIndent}px">`);
                     listStack.push({ type: newListType, indent: indentLevel });
                     currentIndentLevel = indentLevel;
                 } else if (indentLevel < currentIndentLevel) {
                     // Close nested lists until we reach the right level
                     while (listStack.length > 0 && listStack[listStack.length - 1].indent > indentLevel) {
                         const closingList = listStack.pop()!;
-                        processedLines.push(`</${closingList.type}>`);
-                        processedLines.push('</li>');
+                        processedLines.push(`</${closingList.type}></li>`);
                     }
                     currentIndentLevel = indentLevel;
                     
@@ -949,19 +946,21 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                     if (listStack.length > 0 && listStack[listStack.length - 1].type !== newListType) {
                         const oldList = listStack.pop()!;
                         processedLines.push(`</${oldList.type}>`);
-                        processedLines.push(`<${newListType}>`);
+                        processedLines.push(`<${newListType} class="ml-6">`);
                         listStack.push({ type: newListType, indent: indentLevel });
                     }
                 } else if (listStack.length > 0 && listStack[listStack.length - 1].type !== newListType) {
                     // Same level but different type
                     const oldList = listStack.pop()!;
                     processedLines.push(`</${oldList.type}>`);
-                    processedLines.push(`<${newListType}>`);
+                    processedLines.push(`<${newListType} class="ml-6">`);
                     listStack.push({ type: newListType, indent: indentLevel });
                 }
             }
             
-            processedLines.push(`<li class="text-slate-700 dark:text-slate-300 my-1" style="margin-left: ${marginLeft}px">${content}</li>`);
+            // Use list-disc or list-decimal classes for proper bullet/number display
+            const listStyleClass = isOrdered ? 'list-decimal' : 'list-disc';
+            processedLines.push(`<li class="${listStyleClass} text-slate-700 dark:text-slate-300 my-1">${content}</li>`);
         } else {
             // Not a list item
             if (inList) {
@@ -990,6 +989,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     // Consume one newline immediately after block elements to prevent double spacing with the subsequent <br/>
     // Blocks: h1-h6, li, blockquote, div (tasks), ul, ol
     html = html.replace(/(<\/(h[1-6]|li|blockquote|div|ul|ol)>)(\r\n|\n|\r)/g, '$1');
+
+    // Also consume newlines after opening ul/ol tags to prevent <br> insertion
+    html = html.replace(/(<(ul|ol)[^>]*>)(\r\n|\n|\r)/g, '$1');
 
     // Convert all remaining newlines to line breaks to preserve formatting
     html = html.replace(/(\r\n|\n|\r)/g, '<br/>');
