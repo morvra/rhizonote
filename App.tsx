@@ -309,8 +309,6 @@ export default function App() {
       // Remove from state
       setNotes(prev => prev.filter(n => !n.deletedAt || (now - n.deletedAt <= THIRTY_DAYS_MS)));
       setFolders(prev => prev.filter(f => !f.deletedAt || (now - f.deletedAt <= THIRTY_DAYS_MS)));
-
-      console.log(`Cleaned up ${expiredNotes.length} notes and ${expiredFolders.length} folders from trash.`);
   };
 
   // Guard against double firing in strict mode
@@ -395,9 +393,6 @@ export default function App() {
   };
 
   const handleSync = async () => {
-      console.log('=== handleSync called ===');
-      console.log('unsyncedNoteIds:', Array.from(unsyncedNoteIds.current));
-      
       if (!dropboxToken && !dropboxRefreshToken) {
           if (confirm("Dropbox is not connected. Open settings?")) {
             setShowSettings(true);
@@ -417,8 +412,6 @@ export default function App() {
           await new Promise<void>(resolve => {
               setNotes(current => {
                   latestNotes = current;
-                  console.log('Captured notes count:', latestNotes.length);
-                  console.log('Captured notes:', latestNotes.map(n => `${n.id}:${n.title}`).join(', '));
                   return current;
               });
               setFolders(current => {
@@ -442,8 +435,6 @@ export default function App() {
               unsyncedNoteIds.current
           );
           
-          console.log('Sync completed. Returned notes:', data.notes.length);
-          
           if (data) {
               setNotes(data.notes);
               setFolders(data.folders);
@@ -451,8 +442,6 @@ export default function App() {
               setPendingRenames([]);
               
               unsyncedNoteIds.current.clear();
-              console.log('Cleared unsyncedNoteIds');
-              
               setSyncStatus('success');
               setSyncMessage(`Synced at ${new Date().toLocaleTimeString()}. ${data.syncLog.length} changes.`);
           }
@@ -481,13 +470,11 @@ export default function App() {
 
           // 既に同期中なら何もしない
           if (isSyncingRef.current) {
-              console.log('Sync already in progress, skipping...');
               return;
           }
 
           // 最後の同期から30秒経っていなければスキップ
           if (timeSinceLastSync < MIN_SYNC_INTERVAL) {
-              console.log(`Sync skipped - too soon (${Math.round(timeSinceLastSync / 1000)}s since last sync)`);
               return;
           }
 
@@ -508,20 +495,17 @@ export default function App() {
       // 1. ページが表示されたときに同期
       const handleVisibilityChange = () => {
           if (document.visibilityState === 'visible') {
-              console.log('Page became visible - checking if sync needed...');
               syncIfNeeded();
           }
       };
 
       // 2. ウィンドウがフォーカスされたときに同期
       const handleFocus = () => {
-          console.log('Window focused - checking if sync needed...');
           syncIfNeeded();
       };
 
       // 3. 定期的な自動同期（5分ごと）
       intervalId = window.setInterval(() => {
-          console.log('Periodic sync triggered');
           syncIfNeeded();
       }, 5 * 60 * 1000);
 
@@ -861,9 +845,6 @@ export default function App() {
   };
 
   const handleUpdateNote = (id: string, updates: Partial<Note>) => {
-    console.log('=== handleUpdateNote called ===');
-    console.log('Note ID:', id);
-    console.log('Updates:', updates);
     
     setNotes((prev: Note[]) => {
         const oldNote = prev.find(n => n.id === id);
@@ -888,12 +869,7 @@ export default function App() {
 
         // 未同期変更をマーク
         unsyncedNoteIds.current.add(id);
-        console.log('Added to unsyncedNoteIds:', id);
-        console.log('Current unsyncedNoteIds size:', unsyncedNoteIds.current.size);
-
         const updatedNote = { ...oldNote, ...updates, updatedAt: Date.now() };
-        console.log('Updated note:', updatedNote);
-        
         return prev.map((n) => (n.id === id ? updatedNote : n));
     });
   };
