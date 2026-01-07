@@ -302,6 +302,9 @@ export const syncDropboxData = async (
     }
 
     // 5. Execute Downloads
+    // SAFETY: Capture IDs of notes we are uploading to prevent overwriting them with stale data/path conflicts.
+    const uploadingIds = new Set(notesToUpload.map(n => n.id));
+
     const dlChunks = chunkArray(filesToDownload, 5);
     for (const batch of dlChunks) {
         await Promise.all(batch.map(async (entry) => {
@@ -338,6 +341,13 @@ export const syncDropboxData = async (
                 const noteId = metadata.id || Math.random().toString(36).substr(2, 9);
                 const noteTitle = metadata.title || entry.name.replace('.md', '');
 
+                // CRITICAL FIX: If we are uploading this note (because local is newer), DO NOT overwrite it with this download.
+                // This happens during Move/Rename where path mismatch causes a download of the 'old' file.
+                if (uploadingIds.has(noteId)) {
+                    log.push(`Skipped stale download: ${noteTitle} (Uploading newer local version)`);
+                    return;
+                }
+
                 const newNoteObj: Note = {
                     id: noteId,
                     title: noteTitle,
@@ -353,6 +363,7 @@ export const syncDropboxData = async (
                 if (existingIdx > -1) {
                     mergedNotes[existingIdx] = newNoteObj;
                 } else {
+                    // Check for duplicate content path, though ID check should cover it.
                     const samePathIdx = mergedNotes.findIndex(n => {
                         return n.title === newNoteObj.title && n.folderId === newNoteObj.folderId;
                     });
