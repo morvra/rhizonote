@@ -394,9 +394,9 @@ export default function App() {
       setSyncMessage('');
   };
 
-  const handleSync = async () => {
+  const handleSync = useCallback(async () => {
       console.log('=== handleSync called ===');
-      console.log('unsyncedNoteIds before sync:', Array.from(unsyncedNoteIds.current));
+      console.log('unsyncedNoteIds:', Array.from(unsyncedNoteIds.current));
       
       if (!dropboxToken && !dropboxRefreshToken) {
           if (confirm("Dropbox is not connected. Open settings?")) {
@@ -404,8 +404,20 @@ export default function App() {
           }
           return;
       }
+      
+      // Get latest state using refs
+      const latestNotesRef = { current: notes };
+      const latestFoldersRef = { current: folders };
+      
+      setNotes(n => { latestNotesRef.current = n; return n; });
+      setFolders(f => { latestFoldersRef.current = f; return f; });
+      
+      console.log('Latest notes count:', latestNotesRef.current.length);
+      console.log('Latest notes IDs:', latestNotesRef.current.map(n => `${n.id}:${n.title}`));
+      
       setSyncStatus('syncing');
       setSyncMessage('Syncing changes...');
+      
       try {
           const auth = {
               accessToken: dropboxToken,
@@ -414,8 +426,8 @@ export default function App() {
 
           const data = await syncDropboxData(
               auth, 
-              notes, 
-              folders, 
+              latestNotesRef.current,
+              latestFoldersRef.current, 
               deletedPaths, 
               pendingRenames,
               unsyncedNoteIds.current
@@ -429,7 +441,6 @@ export default function App() {
               setDeletedPaths([]);
               setPendingRenames([]);
               
-              // 未同期フラグをクリア
               unsyncedNoteIds.current.clear();
               console.log('Cleared unsyncedNoteIds');
               
@@ -442,7 +453,7 @@ export default function App() {
           setSyncMessage('Sync failed. Check console.');
       }
       setTimeout(() => { if(syncStatus !== 'error') setSyncStatus('idle'); }, 4000);
-  };
+  }, [dropboxToken, dropboxRefreshToken, notes, folders, deletedPaths, pendingRenames, syncStatus]);
 
   // 同期中フラグと最終同期時刻をRefで管理
   const isSyncingRef = useRef(false);
