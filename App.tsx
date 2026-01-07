@@ -395,6 +395,9 @@ export default function App() {
   };
 
   const handleSync = async () => {
+      console.log('=== handleSync called ===');
+      console.log('unsyncedNoteIds before sync:', Array.from(unsyncedNoteIds.current));
+      
       if (!dropboxToken && !dropboxRefreshToken) {
           if (confirm("Dropbox is not connected. Open settings?")) {
             setShowSettings(true);
@@ -409,7 +412,17 @@ export default function App() {
               refreshToken: dropboxRefreshToken
           };
 
-          const data = await syncDropboxData(auth, notes, folders, deletedPaths, pendingRenames, unsyncedNoteIds.current);
+          const data = await syncDropboxData(
+              auth, 
+              notes, 
+              folders, 
+              deletedPaths, 
+              pendingRenames,
+              unsyncedNoteIds.current
+          );
+          
+          console.log('Sync completed. Returned notes:', data.notes.length);
+          
           if (data) {
               setNotes(data.notes);
               setFolders(data.folders);
@@ -418,6 +431,7 @@ export default function App() {
               
               // 未同期フラグをクリア
               unsyncedNoteIds.current.clear();
+              console.log('Cleared unsyncedNoteIds');
               
               setSyncStatus('success');
               setSyncMessage(`Synced at ${new Date().toLocaleTimeString()}. ${data.syncLog.length} changes.`);
@@ -827,6 +841,10 @@ export default function App() {
   };
 
   const handleUpdateNote = (id: string, updates: Partial<Note>) => {
+    console.log('=== handleUpdateNote called ===');
+    console.log('Note ID:', id);
+    console.log('Updates:', updates);
+    
     setNotes((prev: Note[]) => {
         const oldNote = prev.find(n => n.id === id);
         if (!oldNote) return prev;
@@ -850,8 +868,13 @@ export default function App() {
 
         // 未同期変更をマーク
         unsyncedNoteIds.current.add(id);
+        console.log('Added to unsyncedNoteIds:', id);
+        console.log('Current unsyncedNoteIds size:', unsyncedNoteIds.current.size);
 
-        return prev.map((n) => (n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n));
+        const updatedNote = { ...oldNote, ...updates, updatedAt: Date.now() };
+        console.log('Updated note:', updatedNote);
+        
+        return prev.map((n) => (n.id === id ? updatedNote : n));
     });
   };
 
