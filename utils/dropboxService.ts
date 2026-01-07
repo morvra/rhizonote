@@ -372,9 +372,9 @@ export const syncDropboxData = async (
             const remoteEntry = remoteData.entry;
             
             // Calculate expected path for local note
-            const expectedPath = getNotePath(localNote.title, localNote.folderId, mergedFolders);
+            const localExpectedPath = getNotePath(localNote.title, localNote.folderId, mergedFolders);
             const actualRemotePath = remoteEntry.path_lower;
-            const pathsMatch = expectedPath.toLowerCase() === actualRemotePath;
+            const pathsMatch = localExpectedPath.toLowerCase() === actualRemotePath;
             
             // Determine which version is newer
             const localTime = localNote.updatedAt;
@@ -382,22 +382,35 @@ export const syncDropboxData = async (
             const timeDiff = Math.abs(localTime - remoteTime);
             
             if (!pathsMatch) {
-                // Path mismatch - local has been renamed/moved
-                // Always trust local path, upload to new location
-                notesToUpload.push(localNote);
-                staleRemotePaths.push(actualRemotePath);
-                log.push(`Path mismatch: ${localNote.title} - will upload to new path`);
-                finalNotesMap.set(localNote.id, localNote);
+                // Path mismatch detected
+                // This means either:
+                // 1. Local was renamed/moved (and not yet synced) -> local is source of truth
+                // 2. Remote was renamed/moved (from another device) -> remote is source of truth
+                
+                // CRITICAL DECISION: Compare timestamps to determine source of truth
+                if (localTime > remoteTime + 2000) {
+                    // Local is significantly newer - local rename/move happened
+                    notesToUpload.push(localNote);
+                    staleRemotePaths.push(actualRemotePath);
+                    log.push(`Path mismatch (local newer): ${localNote.title} -> will upload to new path`);
+                    finalNotesMap.set(localNote.id, localNote);
+                } else {
+                    // Remote is newer or equal - remote rename/move happened
+                    // Trust remote version completely (including new title and folderId)
+                    log.push(`Path mismatch (remote newer): "${localNote.title}" -> "${remoteNote.title}" - will adopt remote`);
+                    finalNotesMap.set(localNote.id, remoteNote);
+                    notesToDownload.push(remoteData);
+                }
             } else if (timeDiff <= 2000) {
-                // Timestamps are essentially equal - no conflict
+                // Timestamps are essentially equal and paths match - no conflict
                 // Keep local version (already in map)
             } else if (localTime > remoteTime) {
-                // Local is newer
+                // Local is newer (same path)
                 notesToUpload.push(localNote);
                 log.push(`Will upload (local newer): ${localNote.title}`);
                 finalNotesMap.set(localNote.id, localNote);
             } else {
-                // Remote is newer - replace local with remote
+                // Remote is newer (same path) - replace local with remote
                 notesToDownload.push(remoteData);
                 log.push(`Will download (remote newer): ${localNote.title}`);
                 finalNotesMap.set(localNote.id, remoteNote);
