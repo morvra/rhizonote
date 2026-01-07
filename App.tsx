@@ -210,6 +210,9 @@ export default function App() {
 
   const activeNoteId = panes[activePaneIndex];
 
+  // Gesture State for Edge Swipe
+  const touchStartRef = useRef<{ x: number, y: number } | null>(null);
+
   // LocalStorage Effects
   useEffect(() => {
     localStorage.setItem(LS_KEY_NOTES, JSON.stringify(notes));
@@ -980,6 +983,37 @@ export default function App() {
       }
   };
 
+  // Edge Swipe Handler
+  const handleTouchStart = (e: React.TouchEvent) => {
+    // Only track if single touch
+    if (e.touches.length !== 1) return;
+    
+    touchStartRef.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY
+    };
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+      if (!touchStartRef.current) return;
+      
+      const touchEndX = e.changedTouches[0].clientX;
+      const touchEndY = e.changedTouches[0].clientY;
+      
+      const deltaX = touchEndX - touchStartRef.current.x;
+      const deltaY = Math.abs(touchEndY - touchStartRef.current.y);
+
+      // Conditions for Edge Swipe:
+      // 1. Start near left edge (within 40px)
+      // 2. Swiped Right significantly (> 50px)
+      // 3. Vertical movement is minimal (to distinguish from scroll)
+      if (touchStartRef.current.x < 40 && deltaX > 50 && deltaY < 50) {
+          setMobileMenuOpen(true);
+      }
+      
+      touchStartRef.current = null;
+  };
+
   const shortcutHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
 
   useEffect(() => {
@@ -1071,6 +1105,8 @@ export default function App() {
         onMouseMove={handleMouseMove}
         onMouseUp={stopResizing}
         onMouseLeave={stopResizing}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
     >
       <Sidebar
         isOpen={mobileMenuOpen}
