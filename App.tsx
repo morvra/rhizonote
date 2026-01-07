@@ -432,11 +432,23 @@ export default function App() {
       if (!autoSync || (!dropboxToken && !dropboxRefreshToken)) return;
 
       let intervalId: number | undefined;
+      let isSyncing = false; // ローカルフラグで同期中かを管理
 
-      const syncIfNeeded = () => {
-          // 同期中でなければ実行
-          if (syncStatus !== 'syncing') {
-              handleSync();
+      const syncIfNeeded = async () => {
+          // 既に同期中なら何もしない
+          if (isSyncing) {
+              console.log('Sync already in progress, skipping...');
+              return;
+          }
+
+          isSyncing = true;
+          try {
+              await handleSync();
+          } finally {
+              // 同期完了後、少し待ってからフラグをリセット
+              setTimeout(() => {
+                  isSyncing = false;
+              }, 1000);
           }
       };
 
@@ -464,16 +476,19 @@ export default function App() {
       document.addEventListener('visibilitychange', handleVisibilityChange);
       window.addEventListener('focus', handleFocus);
 
-      // 初回同期（マウント時）
-      syncIfNeeded();
+      // 初回同期（マウント時）- 少し遅延させる
+      const initialSyncTimeout = setTimeout(() => {
+          syncIfNeeded();
+      }, 1000);
 
       // クリーンアップ
       return () => {
           if (intervalId) clearInterval(intervalId);
+          clearTimeout(initialSyncTimeout);
           document.removeEventListener('visibilitychange', handleVisibilityChange);
           window.removeEventListener('focus', handleFocus);
       };
-  }, [autoSync, dropboxToken, dropboxRefreshToken, syncStatus]);
+  }, [autoSync, dropboxToken, dropboxRefreshToken]); // syncStatusは依存配列から除外
 
 
   // Extract all tasks from all notes (Memoized)
@@ -1521,7 +1536,7 @@ export default function App() {
                         Automatically sync when page becomes active and every 5 minutes
                     </p>
                 </div>
-                
+
                 <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-slate-800">
                     <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-slate-300">
                         <Calendar size={16} />
