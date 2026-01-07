@@ -148,6 +148,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showTasks, setShowTasks] = useState(uiSettings.showTasks || false);
+  const [autoSync, setAutoSync] = useState(uiSettings.autoSync ?? true);
 
   // Dropbox State
   const [dropboxToken, setDropboxToken] = useState<string | null>(() => localStorage.getItem(LS_KEY_DB_TOKEN));
@@ -261,10 +262,11 @@ export default function App() {
           sidebarWidth,
           splitRatio,
           sidebarVisible,
-          showTasks
+          showTasks,
+          autoSync
       };
       localStorage.setItem(LS_KEY_UI_SETTINGS, JSON.stringify(settings));
-  }, [fontSize, sidebarWidth, splitRatio, sidebarVisible, showTasks]);
+  }, [fontSize, sidebarWidth, splitRatio, sidebarVisible, showTasks, autoSync]);
 
   useEffect(() => {
       const prefs = {
@@ -425,12 +427,54 @@ export default function App() {
       setTimeout(() => { if(syncStatus !== 'error') setSyncStatus('idle'); }, 4000);
   };
 
-  // Auto-sync on load
+  // Auto-sync on visibility change and periodic sync
   useEffect(() => {
-      if (dropboxToken || dropboxRefreshToken) {
-          handleSync();
-      }
-  }, []);
+      if (!autoSync || (!dropboxToken && !dropboxRefreshToken)) return;
+
+      let intervalId: number | undefined;
+
+      const syncIfNeeded = () => {
+          // 同期中でなければ実行
+          if (syncStatus !== 'syncing') {
+              handleSync();
+          }
+      };
+
+      // 1. ページが表示されたときに同期
+      const handleVisibilityChange = () => {
+          if (document.visibilityState === 'visible') {
+              console.log('Page became visible - syncing...');
+              syncIfNeeded();
+          }
+      };
+
+      // 2. ウィンドウがフォーカスされたときに同期
+      const handleFocus = () => {
+          console.log('Window focused - syncing...');
+          syncIfNeeded();
+      };
+
+      // 3. 定期的な自動同期（5分ごと）
+      intervalId = window.setInterval(() => {
+          console.log('Periodic sync triggered');
+          syncIfNeeded();
+      }, 5 * 60 * 1000); // 5分
+
+      // イベントリスナー登録
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('focus', handleFocus);
+
+      // 初回同期（マウント時）
+      syncIfNeeded();
+
+      // クリーンアップ
+      return () => {
+          if (intervalId) clearInterval(intervalId);
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+          window.removeEventListener('focus', handleFocus);
+      };
+  }, [autoSync, dropboxToken, dropboxRefreshToken, syncStatus]);
+
 
   // Extract all tasks from all notes (Memoized)
   const allTasks = useMemo<NoteTasks[]>(() => {
@@ -1454,6 +1498,30 @@ export default function App() {
                     </div>
                 </div>
 
+                <div className="space-y-3 pt-4 border-t border-gray-200 dark:border-slate-800">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-slate-300">
+                            <RefreshCw size={16} />
+                            <span>Auto-Sync</span>
+                        </div>
+                        <button
+                            onClick={() => setAutoSync(!autoSync)}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                                autoSync ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-slate-700'
+                            }`}
+                        >
+                            <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                    autoSync ? 'translate-x-6' : 'translate-x-1'
+                                }`}
+                            />
+                        </button>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Automatically sync when page becomes active and every 5 minutes
+                    </p>
+                </div>
+                
                 <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-slate-800">
                     <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-slate-300">
                         <Calendar size={16} />
