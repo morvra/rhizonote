@@ -886,7 +886,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     // Interactive Tasks (Place BEFORE lists to prevent tasks being consumed by list regex)
     let taskIndex = 0;
     // Regex for both checked and unchecked to ensure correct indexing
-    html = html.replace(/^(\s*)([-\*]|\d+\.)\s+\[([ x])\]\s(.*$)/gm, (match, indent, bullet, state, content) => {
+    html = html.replace(/^(\s*)([-\*]|\d+\.)\s+\[([ x])\]\s(.*$)/gm, (_match, indent, _bullet, state, content) => {
         const idx = taskIndex++;
         const isChecked = state === 'x';
         const opacity = isChecked ? 'opacity-50' : 'opacity-80';
@@ -902,7 +902,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     const lines = html.split(/\r?\n/);
     const processedLines: string[] = [];
     let inList = false;
-    let listType: 'ul' | 'ol' | null = null;
     let currentIndentLevel = 0;
     const listStack: { type: 'ul' | 'ol', indent: number }[] = [];
 
@@ -973,7 +972,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                     processedLines.push(`</${closingList.type}>`);
                 }
                 inList = false;
-                listType = null;
                 currentIndentLevel = 0;
             }
             processedLines.push(line);
