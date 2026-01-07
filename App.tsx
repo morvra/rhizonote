@@ -427,42 +427,58 @@ export default function App() {
       setTimeout(() => { if(syncStatus !== 'error') setSyncStatus('idle'); }, 4000);
   };
 
+  // 同期中フラグと最終同期時刻をRefで管理
+  const isSyncingRef = useRef(false);
+  const lastSyncTimeRef = useRef<number>(0);
+
   // Auto-sync on visibility change and periodic sync
   useEffect(() => {
       if (!autoSync || (!dropboxToken && !dropboxRefreshToken)) return;
 
       let intervalId: number | undefined;
-      let isSyncing = false; // ローカルフラグで同期中かを管理
+      const MIN_SYNC_INTERVAL = 30 * 1000; // 最低30秒間隔（レート制限対策）
 
       const syncIfNeeded = async () => {
+          const now = Date.now();
+          const timeSinceLastSync = now - lastSyncTimeRef.current;
+
           // 既に同期中なら何もしない
-          if (isSyncing) {
+          if (isSyncingRef.current) {
               console.log('Sync already in progress, skipping...');
               return;
           }
 
-          isSyncing = true;
+          // 最後の同期から30秒経っていなければスキップ
+          if (timeSinceLastSync < MIN_SYNC_INTERVAL) {
+              console.log(`Sync skipped - too soon (${Math.round(timeSinceLastSync / 1000)}s since last sync)`);
+              return;
+          }
+
+          isSyncingRef.current = true;
+          lastSyncTimeRef.current = now;
+          
           try {
               await handleSync();
+          } catch (error) {
+              console.error('Auto-sync failed:', error);
           } finally {
-              // 同期完了後、少し待ってからフラグをリセット
               setTimeout(() => {
-                  isSyncing = false;
-              }, 1000);
+                  isSyncingRef.current = false;
+              }, 2000);
           }
       };
 
       // 1. ページが表示されたときに同期
       const handleVisibilityChange = () => {
           if (document.visibilityState === 'visible') {
-              console.log('Page became visible - syncing...');
+              console.log('Page became visible - checking if sync needed...');
               syncIfNeeded();
           }
       };
 
       // 2. ウィンドウがフォーカスされたときに同期
       const handleFocus = () => {
-          console.log('Window focused - syncing...');
+          console.log('Window focused - checking if sync needed...');
           syncIfNeeded();
       };
 
@@ -470,16 +486,16 @@ export default function App() {
       intervalId = window.setInterval(() => {
           console.log('Periodic sync triggered');
           syncIfNeeded();
-      }, 5 * 60 * 1000); // 5分
+      }, 5 * 60 * 1000);
 
       // イベントリスナー登録
       document.addEventListener('visibilitychange', handleVisibilityChange);
       window.addEventListener('focus', handleFocus);
 
-      // 初回同期（マウント時）- 少し遅延させる
+      // 初回同期
       const initialSyncTimeout = setTimeout(() => {
           syncIfNeeded();
-      }, 1000);
+      }, 1500);
 
       // クリーンアップ
       return () => {
@@ -488,8 +504,7 @@ export default function App() {
           document.removeEventListener('visibilitychange', handleVisibilityChange);
           window.removeEventListener('focus', handleFocus);
       };
-  }, [autoSync, dropboxToken, dropboxRefreshToken]); // syncStatusは依存配列から除外
-
+  }, [autoSync, dropboxToken, dropboxRefreshToken]);
 
   // Extract all tasks from all notes (Memoized)
   const allTasks = useMemo<NoteTasks[]>(() => {
