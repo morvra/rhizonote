@@ -927,7 +927,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 // Start new list
                 processedLines.push(`<${newListType} class="my-4">`);
                 inList = true;
-                listType = newListType;
                 currentIndentLevel = indentLevel;
                 listStack.push({ type: newListType, indent: indentLevel });
             } else {
