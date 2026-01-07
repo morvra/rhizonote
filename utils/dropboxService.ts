@@ -388,11 +388,22 @@ ${note.content}`;
             const blob = new Blob([fileContent], { type: 'text/markdown' });
 
             try {
-                await dbx.filesUpload({
+                const response = await dbx.filesUpload({
                     path: path,
                     contents: blob,
                     mode: { '.tag': 'overwrite' }
                 });
+                
+                // IMPORTANT: Update local note timestamp to match server timestamp.
+                // This prevents the "server is newer" check from triggering on the next sync 
+                // due to slight clock skew between the device and Dropbox server.
+                const serverTime = new Date(response.result.client_modified).getTime();
+                const targetNote = mergedNotes.find(n => n.id === note.id);
+                if (targetNote) {
+                    targetNote.updatedAt = serverTime;
+                }
+                
+                log.push(`Uploaded: ${note.title}`);
             } catch (e) {
                 console.error(`Upload failed for ${path}`, e);
             }
