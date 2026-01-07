@@ -101,8 +101,8 @@ const NoteItem: React.FC<NoteItemProps> = ({
       onClick={() => !isTrash && onSelect(note.id)}
     >
       <div className="flex items-center gap-2 truncate w-full">
-        <FileText className="w-4 h-4 text-slate-400 dark:text-slate-500 shrink-0" />
-        <span className={`text-sm truncate font-medium ${isTrash ? 'line-through text-slate-400' : ''}`}>{note.title || 'Untitled'}</span>
+        <FileText className="w-4 h-4 md:w-3.5 md:h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
+        <span className={`text-sm md:text-xs truncate font-medium ${isTrash ? 'line-through text-slate-400' : ''}`}>{note.title || 'Untitled'}</span>
       </div>
       
       {/* Action Icons - Absolute Positioned to avoid taking up space when hidden */}
@@ -259,14 +259,14 @@ const FolderItem: React.FC<{
         }`}
         onClick={() => onToggleExpand(folder.id)}
       >
-        <div className="flex items-center gap-1 font-semibold text-sm uppercase tracking-wide pointer-events-none w-full">
+        <div className="flex items-center gap-1 font-semibold text-sm md:text-xs uppercase tracking-wide pointer-events-none w-full">
           {isExpanded 
-            ? <ChevronDown className="w-4 h-4 shrink-0" /> 
-            : <ChevronRight className="w-4 h-4 shrink-0" />
+            ? <ChevronDown className="w-4 h-4 md:w-3.5 md:h-3.5 shrink-0" /> 
+            : <ChevronRight className="w-4 h-4 md:w-3.5 md:h-3.5 shrink-0" />
           }
           {isExpanded 
-            ? <FolderOpen className="text-indigo-500 dark:text-indigo-400 w-4 h-4 shrink-0" /> 
-            : <FolderIcon className="w-4 h-4 shrink-0" />
+            ? <FolderOpen className="text-indigo-500 dark:text-indigo-400 w-4 h-4 md:w-3.5 md:h-3.5 shrink-0" /> 
+            : <FolderIcon className="w-4 h-4 md:w-3.5 md:h-3.5 shrink-0" />
           }
           <span className="ml-1 select-none truncate">{folder.name}</span>
         </div>
@@ -503,7 +503,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             >
             {bookmarkedNotes.length > 0 && !isSearching && (
                 <div className="mb-4">
-                <div className="px-3 py-1 text-xs md:text-xs font-semibold text-slate-500 dark:text-slate-600 uppercase tracking-wider mb-1 flex items-center gap-1">
+                <div className="px-3 py-1 text-xs md:text-[10px] font-semibold text-slate-500 dark:text-slate-600 uppercase tracking-wider mb-1 flex items-center gap-1">
                     <Bookmark size={12} className="md:w-[10px] md:h-[10px]" /> Bookmarks
                 </div>
                 {bookmarkedNotes.map((note) => (
@@ -523,7 +523,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             {isSearching ? (
                 /* Flat list for search results */
                 <div>
-                    <div className="px-3 py-1 text-xs md:text-xs font-semibold text-slate-500 dark:text-slate-600 uppercase tracking-wider mb-1">
+                    <div className="px-3 py-1 text-xs md:text-[10px] font-semibold text-slate-500 dark:text-slate-600 uppercase tracking-wider mb-1">
                     Search Results
                     </div>
                     {filteredNotes.length === 0 && <div className="px-3 text-sm md:text-sm text-slate-500 dark:text-slate-500">No results found</div>}
@@ -591,7 +591,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                         onClick={() => setTrashOpen(!trashOpen)}
                     >
                         <Trash2 size={14} className="md:w-[14px] md:h-[14px]" />
-                        <span className="text-xs md:text-xs font-semibold uppercase tracking-wider flex-1">Trash ({trashedNotes.length + trashedFolders.length})</span>
+                        <span className="text-xs md:text-[10px] font-semibold uppercase tracking-wider flex-1">Trash ({trashedNotes.length + trashedFolders.length})</span>
                         {trashOpen ? <ChevronDown size={14} className="md:w-[14px] md:h-[14px]" /> : <ChevronRight size={14} className="md:w-[14px] md:h-[14px]" />}
                     </div>
                     
