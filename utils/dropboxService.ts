@@ -101,8 +101,13 @@ export const parseAuthTokenFromUrl = (): string | null => {
 };
 
 /**
- * Performs a smart two-way sync.
- * Now supports Refresh Tokens for long-lived sessions.
+ * Performs a smart two-way sync with proper conflict resolution.
+ * Strategy:
+ * 1. Process explicit deletions and renames first
+ * 2. Download all remote files and build ID-based index
+ * 3. For each local note, determine action: upload, download, or skip
+ * 4. Clean up duplicate remote files
+ * 5. Execute all operations
  */
 export const syncDropboxData = async (
     auth: { accessToken?: string | null, refreshToken?: string | null },
@@ -116,13 +121,11 @@ export const syncDropboxData = async (
   let dbx: Dropbox;
   
   if (auth.refreshToken) {
-      // SDK automatically handles refreshing access token when refreshToken is provided
       dbx = new Dropbox({ 
           clientId: CLIENT_ID, 
           refreshToken: auth.refreshToken 
       });
   } else if (auth.accessToken) {
-      // Fallback for legacy sessions (will expire eventually)
       dbx = new Dropbox({ accessToken: auth.accessToken });
   } else {
       throw new Error("No credentials provided for sync.");
@@ -131,6 +134,8 @@ export const syncDropboxData = async (
   const log: string[] = [];
 
   try {
+    // ==================== STEP 0: Process Explicit Operations ====================
+    
     // 0a. Process Deletions First
     if (pathsToDelete.length > 0) {
         const uniquePaths = Array.from(new Set(pathsToDelete));
@@ -143,6 +148,7 @@ export const syncDropboxData = async (
                 } catch (e: any) {
                     if (e?.error?.error_summary?.includes('path_lookup/not_found')) {
                         // already gone, fine
+                        log.push(`Already deleted: ${path}`);
                     } else {
                         console.error(`Deletion failed for ${path}`, e);
                         log.push(`Failed delete: ${path}`);
@@ -154,26 +160,30 @@ export const syncDropboxData = async (
 
     // 0b. Process Renames (Moves)
     if (renames.length > 0) {
-        // Execute sequentially to respect order dependencies
         for (const op of renames) {
             if (op.from === op.to) continue;
             try {
                 await dbx.filesMoveV2({
                     from_path: op.from,
                     to_path: op.to,
-                    autorename: false // Fail if target exists, usually desired for sync integrity
+                    autorename: false
                 });
                 log.push(`Renamed remote: ${op.from} -> ${op.to}`);
             } catch (e: any) {
-                // If from_path not found, maybe it was deleted or never uploaded?
-                // If to_path exists, it's a conflict.
-                console.error(`Rename failed for ${op.from} -> ${op.to}`, e);
-                log.push(`Failed rename: ${op.from} -> ${op.to}`);
+                const errorSummary = e?.error?.error_summary || '';
+                if (errorSummary.includes('from_lookup/not_found')) {
+                    log.push(`Rename skipped (source not found): ${op.from}`);
+                } else if (errorSummary.includes('to/conflict')) {
+                    log.push(`Rename skipped (target exists): ${op.to}`);
+                } else {
+                    console.error(`Rename failed for ${op.from} -> ${op.to}`, e);
+                    log.push(`Failed rename: ${op.from} -> ${op.to}`);
+                }
             }
         }
     }
 
-    // 1. Fetch Remote State
+    // ==================== STEP 1: Fetch Remote State ====================
     let entries: any[] = [];
     let hasMore = true;
     let cursor = null;
@@ -191,13 +201,12 @@ export const syncDropboxData = async (
     const remoteFileEntries = entries.filter(e => e['.tag'] === 'file' && e.name.endsWith('.md'));
     const remoteFolderEntries = entries.filter(e => e['.tag'] === 'folder');
 
-    // 2. Reconstruct Remote Folder Structure
+    // ==================== STEP 2: Reconstruct Remote Folder Structure ====================
     const mergedFolders = [...localFolders];
     
-    // Calculate all local folder paths for matching
-    const localFolderPaths = new Map<string, string>(); // Path (lower) -> ID
+    const localFolderPaths = new Map<string, string>();
     const mapLocalFolderPaths = (parentId: string | null, parentPath: string) => {
-        const children = localFolders.filter(f => f.parentId === parentId);
+        const children = localFolders.filter(f => f.parentId === parentId && !f.deletedAt);
         children.forEach(c => {
             const myPath = parentPath === '' ? `/${sanitizeFilename(c.name).toLowerCase()}` : `${parentPath}/${sanitizeFilename(c.name).toLowerCase()}`;
             localFolderPaths.set(myPath, c.id);
@@ -206,7 +215,7 @@ export const syncDropboxData = async (
     };
     mapLocalFolderPaths(null, '');
 
-    // Process Remote Folders (Remote -> Local)
+    // Process Remote Folders
     remoteFolderEntries.sort((a, b) => a.path_lower.length - b.path_lower.length).forEach((entry: any) => {
         if (!localFolderPaths.has(entry.path_lower)) {
             const name = entry.name;
@@ -227,86 +236,19 @@ export const syncDropboxData = async (
         }
     });
 
-    // 3. Compare Files and Notes
-    const notesToUpload: Note[] = [];
-    const filesToDownload: any[] = [];
-    const mergedNotes = [...localNotes];
-
-    const remoteFileMap = new Map<string, any>();
-    remoteFileEntries.forEach((f: any) => remoteFileMap.set(f.path_lower, f));
-
-    // Check Local Notes against Remote
-    for (const note of localNotes) {
-        const path = getNotePath(note.title, note.folderId, mergedFolders);
-        const pathLower = path.toLowerCase();
-        const remoteFile = remoteFileMap.get(pathLower);
-
-        if (!remoteFile) {
-            notesToUpload.push(note);
-            log.push(`Queued upload: ${note.title} (New Local)`);
-        } else {
-            const remoteTime = new Date(remoteFile.client_modified).getTime();
-            const localTime = note.updatedAt;
-
-            // Allow 2 second buffer
-            if (localTime > remoteTime + 2000) {
-                notesToUpload.push(note);
-                log.push(`Queued upload: ${note.title} (Local Newer)`);
-            } else if (remoteTime > localTime + 2000) {
-                filesToDownload.push(remoteFile);
-                log.push(`Queued download: ${note.title} (Remote Newer)`);
-            }
-            remoteFileMap.delete(pathLower);
-        }
-    }
-
-    // Remaining remote files -> Download
-    remoteFileMap.forEach((remoteFile) => {
-        filesToDownload.push(remoteFile);
-        log.push(`Queued download: ${remoteFile.name} (New Remote)`);
-    });
-
-    // 4. Create Missing Remote Folders (Local -> Remote)
-    const folderUploads: string[] = [];
-    const remotePathSet = new Set(remoteFolderEntries.map(e => e.path_lower));
-
-    for (const folder of localFolders) {
-        if (folder.deletedAt) continue;
-        const path = getFolderPath(folder.id, localFolders);
-        if (!path || path === '/' || path === '') continue;
-        
-        if (!remotePathSet.has(path.toLowerCase())) {
-            folderUploads.push(path);
-        }
+    // ==================== STEP 3: Download and Index All Remote Files ====================
+    
+    interface RemoteNoteData {
+        entry: any;
+        noteId: string;
+        note: Note;
     }
     
-    // Sort shortest first to ensure parents are created before children
-    folderUploads.sort((a, b) => a.length - b.length);
-    const uniqueFolderUploads = [...new Set(folderUploads)];
-
-    const createFolderChunks = chunkArray(uniqueFolderUploads, 5);
-    for (const batch of createFolderChunks) {
-        await Promise.all(batch.map(async (path) => {
-            try {
-                await dbx.filesCreateFolderV2({ path, autorename: false });
-                log.push(`Created remote folder: ${path}`);
-            } catch (e: any) {
-                 // Ignore if path/conflict (folder already exists)
-                 const errorTag = e?.error?.['.tag'];
-                 const pathReason = e?.error?.path?.['.tag'];
-                 if (errorTag !== 'path' || pathReason !== 'conflict') {
-                     // console.error(`Create folder warning: ${path}`, e);
-                 }
-            }
-        }));
-    }
-
-    // 5. Execute Downloads
-    // SAFETY: Capture IDs of notes we are uploading to prevent overwriting them with stale data/path conflicts.
-    const uploadingIds = new Set(notesToUpload.map(n => n.id));
-
-    const dlChunks = chunkArray(filesToDownload, 5);
-    for (const batch of dlChunks) {
+    const remoteNotesByIdMap = new Map<string, RemoteNoteData[]>();
+    
+    // Download all remote files in chunks
+    const downloadChunks = chunkArray(remoteFileEntries, 10);
+    for (const batch of downloadChunks) {
         await Promise.all(batch.map(async (entry) => {
             try {
                 const r = await dbx.filesDownload({ path: entry.path_lower });
@@ -328,12 +270,13 @@ export const syncDropboxData = async (
                             const val = line.substring(colonIndex + 1).trim();
                             if (val === 'true') metadata[key] = true;
                             else if (val === 'false') metadata[key] = false;
-                            else if (!isNaN(Number(val)) && key !== 'title') metadata[key] = Number(val);
+                            else if (!isNaN(Number(val)) && key !== 'title' && key !== 'id') metadata[key] = Number(val);
                             else metadata[key] = val;
                         }
                     });
                 }
 
+                // Determine folder ID
                 const lastSlash = entry.path_lower.lastIndexOf('/');
                 const parentPathLower = entry.path_lower.substring(0, lastSlash);
                 const folderId = localFolderPaths.get(parentPathLower) || null;
@@ -341,58 +284,178 @@ export const syncDropboxData = async (
                 const noteId = metadata.id || Math.random().toString(36).substr(2, 9);
                 const noteTitle = metadata.title || entry.name.replace('.md', '');
 
-                // CRITICAL FIX: If we are uploading this note (because local is newer), DO NOT overwrite it with this download.
-                // This happens during Move/Rename where path mismatch causes a download of the 'old' file.
-                if (uploadingIds.has(noteId)) {
-                    log.push(`Skipped stale download: ${noteTitle} (Uploading newer local version)`);
-                    return;
-                }
-
-                const newNoteObj: Note = {
+                const remoteNote: Note = {
                     id: noteId,
                     title: noteTitle,
                     content: content,
                     folderId: folderId,
                     isBookmarked: !!metadata.isBookmarked,
+                    bookmarkOrder: metadata.bookmarkOrder,
                     createdAt: metadata.created || Date.now(),
                     updatedAt: new Date(entry.client_modified).getTime(),
-                    deletedAt: metadata.deletedAt, // Parse deletedAt
+                    deletedAt: metadata.deletedAt,
                 };
-                
-                const existingIdx = mergedNotes.findIndex(n => n.id === newNoteObj.id);
-                if (existingIdx > -1) {
-                    mergedNotes[existingIdx] = newNoteObj;
-                } else {
-                    // Check for duplicate content path, though ID check should cover it.
-                    const samePathIdx = mergedNotes.findIndex(n => {
-                        return n.title === newNoteObj.title && n.folderId === newNoteObj.folderId;
-                    });
-                    if (samePathIdx > -1) {
-                         mergedNotes[samePathIdx] = newNoteObj;
-                    } else {
-                        mergedNotes.push(newNoteObj);
-                    }
+
+                if (!remoteNotesByIdMap.has(noteId)) {
+                    remoteNotesByIdMap.set(noteId, []);
                 }
+                remoteNotesByIdMap.get(noteId)!.push({
+                    entry,
+                    noteId,
+                    note: remoteNote
+                });
 
             } catch (e) {
-                console.error(`Download failed for ${entry.path_display}`, e);
+                console.error(`Failed to download ${entry.path_display}`, e);
             }
         }));
     }
 
-    // 6. Execute Uploads
+    // ==================== STEP 4: Detect and Clean Duplicates ====================
+    
+    const filesToDeleteFromRemote: string[] = [];
+    const canonicalRemoteNotes = new Map<string, RemoteNoteData>();
+    
+    remoteNotesByIdMap.forEach((files, noteId) => {
+        if (files.length > 1) {
+            // Sort by modification time (newest first)
+            files.sort((a, b) => {
+                const timeA = new Date(a.entry.client_modified).getTime();
+                const timeB = new Date(b.entry.client_modified).getTime();
+                return timeB - timeA;
+            });
+            
+            // Keep newest, mark rest for deletion
+            canonicalRemoteNotes.set(noteId, files[0]);
+            
+            for (let i = 1; i < files.length; i++) {
+                filesToDeleteFromRemote.push(files[i].entry.path_lower);
+                log.push(`Marked duplicate for deletion: ${files[i].entry.path_display}`);
+            }
+        } else {
+            canonicalRemoteNotes.set(noteId, files[0]);
+        }
+    });
+
+    // ==================== STEP 5: Three-Way Merge Decision ====================
+    
+    const notesToUpload: Note[] = [];
+    const notesToDownload: RemoteNoteData[] = [];
+    const staleRemotePaths: string[] = []; // Old paths that need deletion
+    const finalNotes: Note[] = [];
+    
+    // Index local notes by ID
+    const localNotesById = new Map<string, Note>();
+    localNotes.forEach(note => localNotesById.set(note.id, note));
+
+    // Process each local note
+    localNotes.forEach(localNote => {
+        const remoteData = canonicalRemoteNotes.get(localNote.id);
+        
+        if (!remoteData) {
+            // Note exists only locally
+            if (!localNote.deletedAt) {
+                notesToUpload.push(localNote);
+                log.push(`Will upload (new): ${localNote.title}`);
+            }
+            finalNotes.push(localNote);
+        } else {
+            // Note exists both locally and remotely
+            const remoteNote = remoteData.note;
+            const remoteEntry = remoteData.entry;
+            
+            // Calculate expected path for local note
+            const expectedPath = getNotePath(localNote.title, localNote.folderId, mergedFolders);
+            const actualRemotePath = remoteEntry.path_lower;
+            const pathsMatch = expectedPath.toLowerCase() === actualRemotePath;
+            
+            // Determine which version is newer
+            const localTime = localNote.updatedAt;
+            const remoteTime = remoteNote.updatedAt;
+            const timeDiff = Math.abs(localTime - remoteTime);
+            
+            if (!pathsMatch) {
+                // Path mismatch - local has been renamed/moved
+                // Always trust local path, upload to new location
+                notesToUpload.push(localNote);
+                staleRemotePaths.push(actualRemotePath);
+                log.push(`Path mismatch: ${localNote.title} - will upload to new path`);
+                finalNotes.push(localNote);
+            } else if (timeDiff <= 2000) {
+                // Timestamps are essentially equal - no conflict
+                finalNotes.push(localNote);
+            } else if (localTime > remoteTime) {
+                // Local is newer
+                notesToUpload.push(localNote);
+                log.push(`Will upload (local newer): ${localNote.title}`);
+                finalNotes.push(localNote);
+            } else {
+                // Remote is newer
+                notesToDownload.push(remoteData);
+                log.push(`Will download (remote newer): ${localNote.title}`);
+                finalNotes.push(remoteNote);
+            }
+            
+            // Mark as processed
+            canonicalRemoteNotes.delete(localNote.id);
+        }
+    });
+
+    // Process remaining remote notes (not in local)
+    canonicalRemoteNotes.forEach((remoteData, noteId) => {
+        notesToDownload.push(remoteData);
+        log.push(`Will download (new from remote): ${remoteData.note.title}`);
+        finalNotes.push(remoteData.note);
+    });
+
+    // ==================== STEP 6: Create Missing Remote Folders ====================
+    
+    const folderUploads: string[] = [];
+    const remotePathSet = new Set(remoteFolderEntries.map(e => e.path_lower));
+
+    for (const folder of localFolders) {
+        if (folder.deletedAt) continue;
+        const path = getFolderPath(folder.id, localFolders);
+        if (!path || path === '/' || path === '') continue;
+        
+        if (!remotePathSet.has(path.toLowerCase())) {
+            folderUploads.push(path);
+        }
+    }
+    
+    folderUploads.sort((a, b) => a.length - b.length);
+    const uniqueFolderUploads = [...new Set(folderUploads)];
+
+    const createFolderChunks = chunkArray(uniqueFolderUploads, 5);
+    for (const batch of createFolderChunks) {
+        await Promise.all(batch.map(async (path) => {
+            try {
+                await dbx.filesCreateFolderV2({ path, autorename: false });
+                log.push(`Created remote folder: ${path}`);
+            } catch (e: any) {
+                const errorTag = e?.error?.['.tag'];
+                const pathReason = e?.error?.path?.['.tag'];
+                if (errorTag !== 'path' || pathReason !== 'conflict') {
+                    console.warn(`Create folder warning: ${path}`, e);
+                }
+            }
+        }));
+    }
+
+    // ==================== STEP 7: Execute Uploads ====================
+    
     const ulChunks = chunkArray(notesToUpload, 5);
     for (const batch of ulChunks) {
         await Promise.all(batch.map(async (note) => {
             const path = getNotePath(note.title, note.folderId, mergedFolders);
             
-            // Include deletedAt in frontmatter
             const fileContent = `---
 id: ${note.id}
 title: ${note.title}
 created: ${note.createdAt}
 updated: ${note.updatedAt}
 isBookmarked: ${note.isBookmarked || false}
+${note.bookmarkOrder !== undefined ? `bookmarkOrder: ${note.bookmarkOrder}` : ''}
 ${note.deletedAt ? `deletedAt: ${note.deletedAt}` : ''}
 ---
 ${note.content}`;
@@ -405,11 +468,9 @@ ${note.content}`;
                     mode: { '.tag': 'overwrite' }
                 });
                 
-                // IMPORTANT: Update local note timestamp to match server timestamp.
-                // This prevents the "server is newer" check from triggering on the next sync 
-                // due to slight clock skew between the device and Dropbox server.
+                // Update timestamp to match server
                 const serverTime = new Date(response.result.client_modified).getTime();
-                const targetNote = mergedNotes.find(n => n.id === note.id);
+                const targetNote = finalNotes.find(n => n.id === note.id);
                 if (targetNote) {
                     targetNote.updatedAt = serverTime;
                 }
@@ -417,12 +478,36 @@ ${note.content}`;
                 log.push(`Uploaded: ${note.title}`);
             } catch (e) {
                 console.error(`Upload failed for ${path}`, e);
+                log.push(`Upload failed: ${note.title}`);
             }
         }));
     }
 
+    // ==================== STEP 8: Clean Up Stale Files ====================
+    
+    const allFilesToDelete = [...filesToDeleteFromRemote, ...staleRemotePaths];
+    const uniqueFilesToDelete = Array.from(new Set(allFilesToDelete));
+    
+    if (uniqueFilesToDelete.length > 0) {
+        const delChunks = chunkArray(uniqueFilesToDelete, 10);
+        for (const batch of delChunks) {
+            await Promise.all(batch.map(async (path) => {
+                try {
+                    await dbx.filesDeleteV2({ path });
+                    log.push(`Deleted stale file: ${path}`);
+                } catch (e: any) {
+                    if (!e?.error?.error_summary?.includes('path_lookup/not_found')) {
+                        console.error(`Deletion failed for ${path}`, e);
+                    }
+                }
+            }));
+        }
+    }
+
+    // ==================== STEP 9: Return Final State ====================
+    
     return {
-        notes: mergedNotes,
+        notes: finalNotes,
         folders: mergedFolders,
         version: 1,
         timestamp: Date.now(),
