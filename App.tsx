@@ -157,6 +157,10 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [syncMessage, setSyncMessage] = useState('');
 
+  // 未同期の変更を追跡
+  const [hasUnsyncedChanges, setHasUnsyncedChanges] = useState(false);
+  const unsyncedNoteIds = useRef<Set<string>>(new Set());
+
   const [recentlyCompletedTasks, setRecentlyCompletedTasks] = useState<Set<string>>(new Set());
 
   const dailyPrefs = useMemo(() => {
@@ -392,7 +396,6 @@ export default function App() {
   };
 
   const handleSync = async () => {
-      // We check for either token. Sync will use refresh token if available for long-term access.
       if (!dropboxToken && !dropboxRefreshToken) {
           if (confirm("Dropbox is not connected. Open settings?")) {
             setShowSettings(true);
@@ -402,19 +405,21 @@ export default function App() {
       setSyncStatus('syncing');
       setSyncMessage('Syncing changes...');
       try {
-          // Perform Two-Way Sync, passing queued deletions AND renames
           const auth = {
               accessToken: dropboxToken,
               refreshToken: dropboxRefreshToken
           };
 
-          const data = await syncDropboxData(auth, notes, folders, deletedPaths, pendingRenames);
+          const data = await syncDropboxData(auth, notes, folders, deletedPaths, pendingRenames, unsyncedNoteIds.current);
           if (data) {
               setNotes(data.notes);
               setFolders(data.folders);
-              // Clear queues on successful sync
               setDeletedPaths([]);
               setPendingRenames([]);
+              
+              // 未同期フラグをクリア
+              unsyncedNoteIds.current.clear();
+              setHasUnsyncedChanges(false);
               
               setSyncStatus('success');
               setSyncMessage(`Synced at ${new Date().toLocaleTimeString()}. ${data.syncLog.length} changes.`);
@@ -571,6 +576,11 @@ export default function App() {
       createdAt: Date.now(),
     };
     setNotes((prev: Note[]) => [newNote, ...prev]);
+    
+    // 未同期変更をマーク
+    unsyncedNoteIds.current.add(newNote.id);
+    setHasUnsyncedChanges(true);
+    
     openNote(newNote.id);
     setMobileMenuOpen(false); 
   };
@@ -586,6 +596,10 @@ export default function App() {
         createdAt: Date.now(),
     };
     setNotes((prev: Note[]) => [newNote, ...prev]);
+    
+    // 未同期変更をマーク
+    unsyncedNoteIds.current.add(newNote.id);
+    setHasUnsyncedChanges(true);
   };
 
   const handleOpenDailyNote = () => {
@@ -837,6 +851,10 @@ export default function App() {
                  queueRename(oldPath, newPath);
              }
         }
+
+        // 未同期変更をマーク
+        unsyncedNoteIds.current.add(id);
+        setHasUnsyncedChanges(true);
 
         return prev.map((n) => (n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n));
     });

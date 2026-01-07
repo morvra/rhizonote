@@ -114,7 +114,8 @@ export const syncDropboxData = async (
     localNotes: Note[], 
     localFolders: Folder[], 
     pathsToDelete: string[] = [],
-    renames: RenameOperation[] = []
+    renames: RenameOperation[] = [],
+    unsyncedNoteIds: Set<string> = new Set()
 ): Promise<SyncData> => {
   
   // Initialize Dropbox client with Refresh Token if available (Preferred)
@@ -365,11 +366,13 @@ export const syncDropboxData = async (
                 notesToUpload.push(localNote);
                 log.push(`Will upload (new): ${localNote.title}`);
             }
-            // Keep local version in finalNotesMap (already added above)
         } else {
             // Note exists both locally and remotely
             const remoteNote = remoteData.note;
             const remoteEntry = remoteData.entry;
+            
+            // CRITICAL: Check if this note has unsynced local changes
+            const hasUnsyncedChanges = unsyncedNoteIds.has(localNote.id);
             
             // Calculate expected path for local note
             const localExpectedPath = getNotePath(localNote.title, localNote.folderId, mergedFolders);
@@ -381,36 +384,37 @@ export const syncDropboxData = async (
             const remoteTime = remoteNote.updatedAt;
             const timeDiff = Math.abs(localTime - remoteTime);
             
-            if (!pathsMatch) {
+            if (hasUnsyncedChanges) {
+                // Local has unsynced changes - ALWAYS prioritize local
+                notesToUpload.push(localNote);
+                if (!pathsMatch) {
+                    staleRemotePaths.push(actualRemotePath);
+                }
+                log.push(`Will upload (unsynced local changes): ${localNote.title}`);
+                finalNotesMap.set(localNote.id, localNote);
+            } else if (!pathsMatch) {
                 // Path mismatch detected
-                // This means either:
-                // 1. Local was renamed/moved (and not yet synced) -> local is source of truth
-                // 2. Remote was renamed/moved (from another device) -> remote is source of truth
-                
-                // CRITICAL DECISION: Compare timestamps to determine source of truth
                 if (localTime > remoteTime + 2000) {
-                    // Local is significantly newer - local rename/move happened
+                    // Local is significantly newer
                     notesToUpload.push(localNote);
                     staleRemotePaths.push(actualRemotePath);
                     log.push(`Path mismatch (local newer): ${localNote.title} -> will upload to new path`);
                     finalNotesMap.set(localNote.id, localNote);
                 } else {
-                    // Remote is newer or equal - remote rename/move happened
-                    // Trust remote version completely (including new title and folderId)
+                    // Remote is newer or equal
                     log.push(`Path mismatch (remote newer): "${localNote.title}" -> "${remoteNote.title}" - will adopt remote`);
                     finalNotesMap.set(localNote.id, remoteNote);
                     notesToDownload.push(remoteData);
                 }
             } else if (timeDiff <= 2000) {
                 // Timestamps are essentially equal and paths match - no conflict
-                // Keep local version (already in map)
             } else if (localTime > remoteTime) {
                 // Local is newer (same path)
                 notesToUpload.push(localNote);
                 log.push(`Will upload (local newer): ${localNote.title}`);
                 finalNotesMap.set(localNote.id, localNote);
             } else {
-                // Remote is newer (same path) - replace local with remote
+                // Remote is newer (same path)
                 notesToDownload.push(remoteData);
                 log.push(`Will download (remote newer): ${localNote.title}`);
                 finalNotesMap.set(localNote.id, remoteNote);
