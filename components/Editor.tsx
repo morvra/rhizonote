@@ -886,29 +886,109 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     // Interactive Tasks (Place BEFORE lists to prevent tasks being consumed by list regex)
     let taskIndex = 0;
     // Regex for both checked and unchecked to ensure correct indexing
-    html = html.replace(/^\s*([-\*]|\d+\.)\s+\[([ x])\]\s(.*$)/gm, (_match, _bullet, state, content) => {
+    html = html.replace(/^(\s*)([-\*]|\d+\.)\s+\[([ x])\]\s(.*$)/gm, (match, indent, bullet, state, content) => {
         const idx = taskIndex++;
         const isChecked = state === 'x';
         const opacity = isChecked ? 'opacity-50' : 'opacity-80';
         const decoration = isChecked ? 'line-through text-slate-500' : 'text-slate-700 dark:text-slate-300';
+        const indentLevel = Math.floor(indent.length / 2);
+        const marginLeft = indentLevel * 24; // 24px per indent level
         
-        return `<div class="flex items-start gap-3 my-2 ${opacity}"><input type="checkbox" ${isChecked ? 'checked' : ''} data-task-index="${idx}" class="mt-1.5 rounded border-gray-400 dark:border-slate-600 bg-transparent transform scale-110 cursor-pointer pointer-events-auto"><span class="${decoration}">${content}</span></div>`;
+        return `<div class="flex items-start gap-3 my-2 ${opacity}" style="margin-left: ${marginLeft}px"><input type="checkbox" ${isChecked ? 'checked' : ''} data-task-index="${idx}" class="mt-1.5 rounded border-gray-400 dark:border-slate-600 bg-transparent transform scale-110 cursor-pointer pointer-events-auto"><span class="${decoration}">${content}</span></div>`;
     });
 
-    // Lists Replacement with Wrapping
-    // Unordered
-    html = html.replace(/(?:^\s*-\s+.*(?:\r?\n|$))+/gm, (match) => {
-        // Replace individual list items
-        const items = match.replace(/^\s*-\s+(.*)(?:\r?\n|$)/gm, '<li class="ml-8 list-disc text-slate-700 dark:text-slate-300 my-1">$1</li>');
-        return `<ul class="my-4">${items}</ul>`;
-    });
+    // Lists Replacement with Wrapping (with nested list support)
+    // Process lists line by line to preserve indentation
+    const lines = html.split(/\r?\n/);
+    const processedLines: string[] = [];
+    let inList = false;
+    let listType: 'ul' | 'ol' | null = null;
+    let currentIndentLevel = 0;
+    const listStack: { type: 'ul' | 'ol', indent: number }[] = [];
 
-    // Ordered
-    html = html.replace(/(?:^\s*\d+\.\s+.*(?:\r?\n|$))+/gm, (match) => {
-        // Replace individual list items
-        const items = match.replace(/^\s*\d+\.\s+(.*)(?:\r?\n|$)/gm, '<li class="ml-8 list-decimal text-slate-700 dark:text-slate-300 my-1">$1</li>');
-        return `<ol class="my-4">${items}</ol>`;
-    });
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        // Check if line is a list item (unordered or ordered)
+        const unorderedMatch = line.match(/^(\s*)([-\*])\s+(.*)$/);
+        const orderedMatch = line.match(/^(\s*)(\d+\.)\s+(.*)$/);
+        
+        if (unorderedMatch || orderedMatch) {
+            const match = unorderedMatch || orderedMatch;
+            const indent = match![1];
+            const indentLevel = Math.floor(indent.length / 2);
+            const content = match![3];
+            const isOrdered = !!orderedMatch;
+            const newListType = isOrdered ? 'ol' : 'ul';
+            
+            // Calculate margin for this indent level
+            const marginLeft = indentLevel * 24; // 24px per indent level
+            
+            if (!inList) {
+                // Start new list
+                processedLines.push(`<${newListType} class="my-4">`);
+                inList = true;
+                listType = newListType;
+                currentIndentLevel = indentLevel;
+                listStack.push({ type: newListType, indent: indentLevel });
+            } else {
+                // Check if we need to nest or unnest
+                if (indentLevel > currentIndentLevel) {
+                    // Start nested list
+                    processedLines.push(`<${newListType}>`);
+                    listStack.push({ type: newListType, indent: indentLevel });
+                    currentIndentLevel = indentLevel;
+                } else if (indentLevel < currentIndentLevel) {
+                    // Close nested lists until we reach the right level
+                    while (listStack.length > 0 && listStack[listStack.length - 1].indent > indentLevel) {
+                        const closingList = listStack.pop()!;
+                        processedLines.push(`</${closingList.type}>`);
+                        processedLines.push('</li>');
+                    }
+                    currentIndentLevel = indentLevel;
+                    
+                    // If list type changed at same level, close and open new
+                    if (listStack.length > 0 && listStack[listStack.length - 1].type !== newListType) {
+                        const oldList = listStack.pop()!;
+                        processedLines.push(`</${oldList.type}>`);
+                        processedLines.push(`<${newListType}>`);
+                        listStack.push({ type: newListType, indent: indentLevel });
+                    }
+                } else if (listStack.length > 0 && listStack[listStack.length - 1].type !== newListType) {
+                    // Same level but different type
+                    const oldList = listStack.pop()!;
+                    processedLines.push(`</${oldList.type}>`);
+                    processedLines.push(`<${newListType}>`);
+                    listStack.push({ type: newListType, indent: indentLevel });
+                }
+            }
+            
+            processedLines.push(`<li class="text-slate-700 dark:text-slate-300 my-1" style="margin-left: ${marginLeft}px">${content}</li>`);
+        } else {
+            // Not a list item
+            if (inList) {
+                // Close all open lists
+                while (listStack.length > 0) {
+                    const closingList = listStack.pop()!;
+                    processedLines.push(`</${closingList.type}>`);
+                }
+                inList = false;
+                listType = null;
+                currentIndentLevel = 0;
+            }
+            processedLines.push(line);
+        }
+    }
+    
+    // Close any remaining open lists
+    if (inList) {
+        while (listStack.length > 0) {
+            const closingList = listStack.pop()!;
+            processedLines.push(`</${closingList.type}>`);
+        }
+    }
+    
+    html = processedLines.join('\n');
 
     // Consume one newline immediately after block elements to prevent double spacing with the subsequent <br/>
     // Blocks: h1-h6, li, blockquote, div (tasks), ul, ol
