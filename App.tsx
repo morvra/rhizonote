@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import Editor from './components/Editor';
 import { Note, Folder, SortField, SortDirection, Theme } from './types';
