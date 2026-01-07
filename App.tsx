@@ -158,7 +158,6 @@ export default function App() {
   const [syncMessage, setSyncMessage] = useState('');
 
   // 未同期の変更を追跡
-  const [hasUnsyncedChanges, setHasUnsyncedChanges] = useState(false);
   const unsyncedNoteIds = useRef<Set<string>>(new Set());
 
   const [recentlyCompletedTasks, setRecentlyCompletedTasks] = useState<Set<string>>(new Set());
@@ -419,7 +418,6 @@ export default function App() {
               
               // 未同期フラグをクリア
               unsyncedNoteIds.current.clear();
-              setHasUnsyncedChanges(false);
               
               setSyncStatus('success');
               setSyncMessage(`Synced at ${new Date().toLocaleTimeString()}. ${data.syncLog.length} changes.`);
@@ -579,7 +577,6 @@ export default function App() {
     
     // 未同期変更をマーク
     unsyncedNoteIds.current.add(newNote.id);
-    setHasUnsyncedChanges(true);
     
     openNote(newNote.id);
     setMobileMenuOpen(false); 
@@ -599,7 +596,6 @@ export default function App() {
     
     // 未同期変更をマーク
     unsyncedNoteIds.current.add(newNote.id);
-    setHasUnsyncedChanges(true);
   };
 
   const handleOpenDailyNote = () => {
@@ -854,7 +850,6 @@ export default function App() {
 
         // 未同期変更をマーク
         unsyncedNoteIds.current.add(id);
-        setHasUnsyncedChanges(true);
 
         return prev.map((n) => (n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n));
     });
