@@ -93,18 +93,20 @@ const NoteItem: React.FC<NoteItemProps> = ({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`group flex items-center justify-between px-2 py-1 ml-2 mb-px rounded-md cursor-pointer transition-colors ${
+      className={`group relative flex items-center px-2 py-2 md:py-1.5 ml-2 mb-px rounded-md cursor-pointer transition-colors ${
         note.id === activeNoteId
           ? 'bg-indigo-100 dark:bg-indigo-600/20 text-indigo-700 dark:text-indigo-300 border-l-2 border-indigo-500'
           : 'text-slate-600 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200 border-l-2 border-transparent'
       } ${isDragOver ? 'ring-2 ring-indigo-400 dark:ring-indigo-500' : ''}`}
       onClick={() => !isTrash && onSelect(note.id)}
     >
-      <div className="flex items-center gap-2 truncate flex-1">
-        <FileText className="w-4 h-4 md:w-[13px] md:h-[13px] text-slate-400 dark:text-slate-500" />
-        <span className={`text-sm md:text-xs truncate font-medium ${isTrash ? 'line-through text-slate-400' : ''}`}>{note.title || 'Untitled'}</span>
+      <div className="flex items-center gap-2 truncate w-full">
+        <FileText className="w-4 h-4 text-slate-400 dark:text-slate-500 shrink-0" />
+        <span className={`text-sm truncate font-medium ${isTrash ? 'line-through text-slate-400' : ''}`}>{note.title || 'Untitled'}</span>
       </div>
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      
+      {/* Action Icons - Absolute Positioned to avoid taking up space when hidden */}
+      <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-inherit">
         {!isTrash ? (
             <>
                 <button
@@ -113,10 +115,10 @@ const NoteItem: React.FC<NoteItemProps> = ({
                     onToggleBookmark(note.id);
                 }}
                 onMouseDown={(e) => e.stopPropagation()} 
-                className={`p-0.5 rounded hover:bg-gray-300 dark:hover:bg-slate-700 ${note.isBookmarked ? 'text-yellow-600 dark:text-yellow-500' : 'text-slate-400 dark:text-slate-500'}`}
+                className={`p-1 md:p-0.5 rounded hover:bg-gray-300 dark:hover:bg-slate-700 ${note.isBookmarked ? 'text-yellow-600 dark:text-yellow-500' : 'text-slate-400 dark:text-slate-500'}`}
                 title={note.isBookmarked ? 'Remove Bookmark' : 'Bookmark'}
                 >
-                <Bookmark size={11} fill={note.isBookmarked ? 'currentColor' : 'none'} />
+                <Bookmark size={14} fill={note.isBookmarked ? 'currentColor' : 'none'} />
                 </button>
                 <button
                 onClick={(e) => {
@@ -124,10 +126,10 @@ const NoteItem: React.FC<NoteItemProps> = ({
                     onDelete(note.id);
                 }}
                 onMouseDown={(e) => e.stopPropagation()} 
-                className="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/50 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400"
+                className="p-1 md:p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/50 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400"
                 title="Move to Trash"
                 >
-                <Trash2 size={11} />
+                <Trash2 size={14} />
                 </button>
             </>
         ) : (
@@ -137,20 +139,20 @@ const NoteItem: React.FC<NoteItemProps> = ({
                         e.stopPropagation();
                         onRestore && onRestore(note.id);
                     }}
-                    className="p-0.5 rounded hover:bg-green-100 dark:hover:bg-green-900/50 text-slate-400 hover:text-green-600 dark:hover:text-green-400"
+                    className="p-1 md:p-0.5 rounded hover:bg-green-100 dark:hover:bg-green-900/50 text-slate-400 hover:text-green-600 dark:hover:text-green-400"
                     title="Restore Note"
                 >
-                    <RotateCcw size={11} />
+                    <RotateCcw size={14} />
                 </button>
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
                         onPermanentDelete && onPermanentDelete(note.id);
                     }}
-                    className="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/50 text-slate-400 hover:text-red-600 dark:hover:text-red-400"
+                    className="p-1 md:p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/50 text-slate-400 hover:text-red-600 dark:hover:text-red-400"
                     title="Delete Permanently"
                 >
-                    <AlertTriangle size={11} />
+                    <AlertTriangle size={14} />
                 </button>
             </>
         )}
@@ -250,35 +252,37 @@ const FolderItem: React.FC<{
       onDragLeave={handleDragLeave}
     >
       <div 
-        className={`group flex items-center justify-between px-2 py-1 rounded cursor-pointer text-slate-500 dark:text-slate-400 transition-colors ${
+        className={`group relative flex items-center px-2 py-2 md:py-1.5 rounded cursor-pointer text-slate-500 dark:text-slate-400 transition-colors ${
           isDragOver 
             ? 'text-indigo-600 dark:text-indigo-200' 
             : 'hover:bg-gray-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200'
         }`}
         onClick={() => onToggleExpand(folder.id)}
       >
-        <div className="flex items-center gap-1 font-semibold text-sm md:text-xs uppercase tracking-wide pointer-events-none">
+        <div className="flex items-center gap-1 font-semibold text-sm uppercase tracking-wide pointer-events-none w-full">
           {isExpanded 
-            ? <ChevronDown className="w-4 h-4 md:w-[13px] md:h-[13px]" /> 
-            : <ChevronRight className="w-4 h-4 md:w-[13px] md:h-[13px]" />
+            ? <ChevronDown className="w-4 h-4 shrink-0" /> 
+            : <ChevronRight className="w-4 h-4 shrink-0" />
           }
           {isExpanded 
-            ? <FolderOpen className="text-indigo-500 dark:text-indigo-400 w-4 h-4 md:w-[13px] md:h-[13px]" /> 
-            : <FolderIcon className="w-4 h-4 md:w-[13px] md:h-[13px]" />
+            ? <FolderOpen className="text-indigo-500 dark:text-indigo-400 w-4 h-4 shrink-0" /> 
+            : <FolderIcon className="w-4 h-4 shrink-0" />
           }
-          <span className="ml-1 select-none">{folder.name}</span>
+          <span className="ml-1 select-none truncate">{folder.name}</span>
         </div>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        
+        {/* Action Icons - Absolute Positioned */}
+        <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-inherit">
             <button
                 onClick={(e) => {
                     e.stopPropagation();
                     onRenameFolder(folder.id);
                 }}
                 onMouseDown={(e) => e.stopPropagation()}
-                className="p-0.5 hover:text-slate-800 dark:hover:text-white"
+                className="p-1 md:p-0.5 hover:text-slate-800 dark:hover:text-white"
                 title="Rename Folder"
             >
-                <Edit2 size={11} />
+                <Edit2 size={14} />
             </button>
             <button
               onClick={(e) => {
@@ -288,10 +292,10 @@ const FolderItem: React.FC<{
                 if (!isExpanded) onToggleExpand(folder.id);
               }}
               onMouseDown={(e) => e.stopPropagation()}
-              className="p-0.5 hover:text-slate-800 dark:hover:text-white"
+              className="p-1 md:p-0.5 hover:text-slate-800 dark:hover:text-white"
               title="New Subfolder"
             >
-               <Plus size={11} />
+               <Plus size={14} />
             </button>
             <button
               onClick={(e) => {
@@ -299,10 +303,10 @@ const FolderItem: React.FC<{
                 onDeleteFolder(folder.id);
               }}
               onMouseDown={(e) => e.stopPropagation()}
-              className="p-0.5 hover:text-red-500 dark:hover:text-red-400"
+              className="p-1 md:p-0.5 hover:text-red-500 dark:hover:text-red-400"
               title="Move to Trash"
             >
-               <Trash2 size={11} />
+               <Trash2 size={14} />
             </button>
         </div>
       </div>
@@ -341,7 +345,7 @@ const FolderItem: React.FC<{
              />
           ))}
           {sortedFolders.length === 0 && sortedNotes.length === 0 && (
-             <div className="text-[10px] text-slate-400 dark:text-slate-600 px-4 py-0.5 italic pointer-events-none">Empty</div>
+             <div className="text-xs md:text-[10px] text-slate-400 dark:text-slate-600 px-4 py-0.5 italic pointer-events-none">Empty</div>
           )}
         </div>
       )}
@@ -435,12 +439,12 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      {isOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm"
-          onClick={onCloseMobile}
-        />
-      )}
+      <div 
+        className={`fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm transition-opacity duration-300 ${
+          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={onCloseMobile}
+      />
 
       <div 
         className={`
@@ -454,40 +458,40 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div className={`flex flex-col h-full w-full ${!width ? 'w-64' : ''}`}> 
             <div className="p-4 border-b border-gray-200 dark:border-slate-800 shrink-0">
             <div className="flex items-center justify-between mb-4">
-                <h1 className="font-bold text-slate-800 dark:text-slate-200 tracking-tight">Rhizonote</h1>
+                <h1 className="font-bold text-xl md:text-lg text-slate-800 dark:text-slate-200 tracking-tight">Rhizonote</h1>
                 <div className="flex items-center gap-1">
                 <button
                     onClick={onOpenSettings}
-                    className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors"
+                    className="p-2 md:p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors"
                     title="Settings"
                 >
-                    <Settings size={16} />
+                    <Settings size={18} className="md:w-4 md:h-4" />
                 </button>
                 <div className="w-px h-4 bg-gray-300 dark:bg-slate-700 mx-1"></div>
                 <button
                     onClick={() => onCreateFolder(null)}
-                    className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors"
+                    className="p-2 md:p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors"
                     title="New Root Folder"
                 >
-                    <FolderIcon size={16} />
+                    <FolderIcon size={18} className="md:w-4 md:h-4" />
                 </button>
                 <button
                     onClick={onCreateNote}
-                    className="p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-500 transition-colors shadow-sm"
+                    className="p-2 md:p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-500 transition-colors shadow-sm"
                     title="New Note"
                 >
-                    <Plus size={16} />
+                    <Plus size={18} className="md:w-4 md:h-4" />
                 </button>
                 </div>
             </div>
             <div className="relative">
-                <Search size={14} className="absolute left-3 top-2.5 text-slate-500 dark:text-slate-500" />
+                <Search size={16} className="absolute left-3 top-3 md:top-2.5 text-slate-500 dark:text-slate-500 md:w-[14px] md:h-[14px]" />
                 <input
                 type="text"
                 placeholder="Search..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 text-sm rounded pl-9 pr-3 py-2 border border-gray-300 dark:border-slate-800 focus:border-indigo-500 focus:outline-none placeholder-slate-400 dark:placeholder-slate-600"
+                className="w-full bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 text-base md:text-sm rounded pl-10 md:pl-9 pr-3 py-2 border border-gray-300 dark:border-slate-800 focus:border-indigo-500 focus:outline-none placeholder-slate-400 dark:placeholder-slate-600"
                 />
             </div>
             </div>
@@ -499,8 +503,8 @@ const Sidebar: React.FC<SidebarProps> = ({
             >
             {bookmarkedNotes.length > 0 && !isSearching && (
                 <div className="mb-4">
-                <div className="px-3 py-1 text-xs font-semibold text-slate-500 dark:text-slate-600 uppercase tracking-wider mb-1 flex items-center gap-1">
-                    <Bookmark size={10} /> Bookmarks
+                <div className="px-3 py-1 text-xs md:text-xs font-semibold text-slate-500 dark:text-slate-600 uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <Bookmark size={12} className="md:w-[10px] md:h-[10px]" /> Bookmarks
                 </div>
                 {bookmarkedNotes.map((note) => (
                     <NoteItem
@@ -519,10 +523,10 @@ const Sidebar: React.FC<SidebarProps> = ({
             {isSearching ? (
                 /* Flat list for search results */
                 <div>
-                    <div className="px-3 py-1 text-xs font-semibold text-slate-500 dark:text-slate-600 uppercase tracking-wider mb-1">
+                    <div className="px-3 py-1 text-xs md:text-xs font-semibold text-slate-500 dark:text-slate-600 uppercase tracking-wider mb-1">
                     Search Results
                     </div>
-                    {filteredNotes.length === 0 && <div className="px-3 text-sm text-slate-500 dark:text-slate-500">No results found</div>}
+                    {filteredNotes.length === 0 && <div className="px-3 text-sm md:text-sm text-slate-500 dark:text-slate-500">No results found</div>}
                     {filteredNotes.map(note => (
                         <NoteItem
                             key={note.id}
@@ -583,26 +587,26 @@ const Sidebar: React.FC<SidebarProps> = ({
             {(trashedNotes.length > 0 || trashedFolders.length > 0) && (
                 <div className="shrink-0 border-t border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-900/50">
                     <div 
-                        className="flex items-center gap-2 px-4 py-2 cursor-pointer text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-colors"
+                        className="flex items-center gap-2 px-4 py-3 md:py-2.5 cursor-pointer text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-colors"
                         onClick={() => setTrashOpen(!trashOpen)}
                     >
-                        <Trash2 size={12} />
-                        <span className="text-xs font-semibold uppercase tracking-wider flex-1">Trash ({trashedNotes.length + trashedFolders.length})</span>
-                        {trashOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                        <Trash2 size={14} className="md:w-[14px] md:h-[14px]" />
+                        <span className="text-xs md:text-xs font-semibold uppercase tracking-wider flex-1">Trash ({trashedNotes.length + trashedFolders.length})</span>
+                        {trashOpen ? <ChevronDown size={14} className="md:w-[14px] md:h-[14px]" /> : <ChevronRight size={14} className="md:w-[14px] md:h-[14px]" />}
                     </div>
                     
                     {trashOpen && (
                         <div className="max-h-60 overflow-y-auto border-t border-gray-200 dark:border-slate-800 bg-gray-100/50 dark:bg-slate-950/50 p-2 shadow-inner">
-                             <div className="mb-2 text-[10px] text-slate-400 px-2 italic text-center">Items are deleted after 30 days</div>
+                             <div className="mb-2 text-xs md:text-[10px] text-slate-400 px-2 italic text-center">Items are deleted after 30 days</div>
                             {trashedFolders.map(folder => (
-                                <div key={folder.id} className="group flex items-center justify-between px-2 py-1 text-slate-500 dark:text-slate-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded mb-0.5">
-                                    <div className="flex items-center gap-2 truncate">
-                                        <FolderIcon size={12} />
-                                        <span className="text-xs line-through truncate">{folder.name}</span>
+                                <div key={folder.id} className="group relative flex items-center px-2 py-2 md:py-1.5 text-slate-500 dark:text-slate-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded mb-0.5">
+                                    <div className="flex items-center gap-2 truncate w-full">
+                                        <FolderIcon size={14} className="md:w-[12px] md:h-[12px]" />
+                                        <span className="text-sm md:text-xs line-through truncate">{folder.name}</span>
                                     </div>
-                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-                                        <button onClick={() => onRestoreFolder(folder.id)} title="Restore" className="p-0.5 hover:text-green-600"><RotateCcw size={11}/></button>
-                                        <button onClick={() => onPermanentDeleteFolder(folder.id)} title="Delete Forever" className="p-0.5 hover:text-red-600"><AlertTriangle size={11}/></button>
+                                    <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 bg-inherit">
+                                        <button onClick={() => onRestoreFolder(folder.id)} title="Restore" className="p-0.5 hover:text-green-600"><RotateCcw size={14} className="md:w-[11px] md:h-[11px]"/></button>
+                                        <button onClick={() => onPermanentDeleteFolder(folder.id)} title="Delete Forever" className="p-0.5 hover:text-red-600"><AlertTriangle size={14} className="md:w-[11px] md:h-[11px]"/></button>
                                     </div>
                                 </div>
                             ))}

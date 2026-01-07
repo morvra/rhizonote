@@ -1147,70 +1147,73 @@ export default function App() {
                     </button>
                 </div>
 
-                <button
-                    onClick={handleOpenDailyNote}
-                    className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
-                    title="Open Today's Note (Cmd/Ctrl + D)"
-                >
-                    <Calendar size={18} />
-                </button>
+                {/* Hide these on Mobile, Show on Desktop */}
+                <div className="hidden md:flex items-center">
+                    <button
+                        onClick={handleOpenDailyNote}
+                        className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
+                        title="Open Today's Note (Cmd/Ctrl + D)"
+                    >
+                        <Calendar size={18} />
+                    </button>
 
-                <button
-                    onClick={() => setShowTasks(true)}
-                    className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
-                    title="Task List (Alt + T)"
-                >
-                    <CheckSquare size={18} />
-                </button>
+                    <button
+                        onClick={() => setShowTasks(true)}
+                        className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
+                        title="Task List (Alt + T)"
+                    >
+                        <CheckSquare size={18} />
+                    </button>
 
-                <button
-                    onClick={handleOpenRandomNote}
-                    className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
-                    title="Open Random Note (Alt + R)"
-                >
-                    <Shuffle size={18} />
-                </button>
+                    <button
+                        onClick={handleOpenRandomNote}
+                        className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
+                        title="Open Random Note (Alt + R)"
+                    >
+                        <Shuffle size={18} />
+                    </button>
 
-                <button
-                    onClick={handleCreateNote}
-                    className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
-                    title="Create New Note (Ctrl/Cmd + Alt + N)"
-                >
-                    <Plus size={18} />
-                </button>
+                    <button
+                        onClick={handleCreateNote}
+                        className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
+                        title="Create New Note (Ctrl/Cmd + Alt + N)"
+                    >
+                        <Plus size={18} />
+                    </button>
 
-                <button
-                    onClick={handleSync}
-                    disabled={!dropboxToken && !dropboxRefreshToken || syncStatus === 'syncing'}
-                    className={`p-1 rounded transition-colors ml-1 flex items-center justify-center 
-                        ${(!dropboxToken && !dropboxRefreshToken)
-                            ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' 
-                            : syncStatus === 'error'
-                                ? 'text-red-500 hover:bg-red-100 dark:hover:bg-red-900/20'
-                                : syncStatus === 'success'
-                                    ? 'text-green-500 hover:bg-green-100 dark:hover:bg-green-900/20'
-                                    : 'text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-200 dark:hover:bg-slate-700'
-                        }`}
-                    title={
-                        (!dropboxToken && !dropboxRefreshToken)
-                        ? "Dropbox Not Connected" 
-                        : syncStatus === 'syncing' 
-                            ? "Syncing..." 
-                            : syncStatus === 'error'
-                                ? "Sync Failed (Click to retry)"
-                                : "Sync to Dropbox (Ctrl/Cmd + S)"
-                    }
-                >
-                    {syncStatus === 'syncing' ? (
-                        <RefreshCw size={18} className="animate-spin" />
-                    ) : syncStatus === 'success' ? (
-                        <Check size={18} />
-                    ) : syncStatus === 'error' ? (
-                        <AlertCircle size={18} />
-                    ) : (
-                        <Cloud size={18} />
-                    )}
-                </button>
+                    <button
+                        onClick={handleSync}
+                        disabled={!dropboxToken && !dropboxRefreshToken || syncStatus === 'syncing'}
+                        className={`p-1 rounded transition-colors ml-1 flex items-center justify-center 
+                            ${(!dropboxToken && !dropboxRefreshToken)
+                                ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' 
+                                : syncStatus === 'error'
+                                    ? 'text-red-500 hover:bg-red-100 dark:hover:bg-red-900/20'
+                                    : syncStatus === 'success'
+                                        ? 'text-green-500 hover:bg-green-100 dark:hover:bg-green-900/20'
+                                        : 'text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-200 dark:hover:bg-slate-700'
+                            }`}
+                        title={
+                            (!dropboxToken && !dropboxRefreshToken)
+                            ? "Dropbox Not Connected" 
+                            : syncStatus === 'syncing' 
+                                ? "Syncing..." 
+                                : syncStatus === 'error'
+                                    ? "Sync Failed (Click to retry)"
+                                    : "Sync to Dropbox (Ctrl/Cmd + S)"
+                        }
+                    >
+                        {syncStatus === 'syncing' ? (
+                            <RefreshCw size={18} className="animate-spin" />
+                        ) : syncStatus === 'success' ? (
+                            <Check size={18} />
+                        ) : syncStatus === 'error' ? (
+                            <AlertCircle size={18} />
+                        ) : (
+                            <Cloud size={18} />
+                        )}
+                    </button>
+                </div>
             </div>
             
             <div className="flex items-center gap-2">
@@ -1234,16 +1237,18 @@ export default function App() {
             style={{ flex: panes[1] !== null ? splitRatio : 1 }}
           >
             {getNoteById(panes[0]) ? (
-              <Editor
-                note={getNoteById(panes[0])!}
-                allNotes={notes}
-                onUpdate={handleUpdateNote}
-                onLinkClick={handleLinkClick}
-                onRefactorLinks={handleRefactorLinks}
-                onCreateNoteWithContent={handleCreateSpecificNote}
-                fontSize={fontSize}
-                isActive={activePaneIndex === 0}
-              />
+              <div className="flex flex-col h-full pb-24 md:pb-0">
+                <Editor
+                    note={getNoteById(panes[0])!}
+                    allNotes={notes}
+                    onUpdate={handleUpdateNote}
+                    onLinkClick={handleLinkClick}
+                    onRefactorLinks={handleRefactorLinks}
+                    onCreateNoteWithContent={handleCreateSpecificNote}
+                    fontSize={fontSize}
+                    isActive={activePaneIndex === 0}
+                />
+              </div>
             ) : (
                <EmptyState onCreate={handleCreateNote} />
             )}
@@ -1263,22 +1268,78 @@ export default function App() {
                 style={{ flex: 1 - splitRatio }}
              >
                 {getNoteById(panes[1]) ? (
-                    <Editor
-                        note={getNoteById(panes[1])!}
-                        allNotes={notes}
-                        onUpdate={handleUpdateNote}
-                        onLinkClick={handleLinkClick}
-                        onRefactorLinks={handleRefactorLinks}
-                        onCreateNoteWithContent={handleCreateSpecificNote}
-                        fontSize={fontSize}
-                        isActive={activePaneIndex === 1}
-                    />
+                    <div className="flex flex-col h-full pb-24 md:pb-0">
+                        <Editor
+                            note={getNoteById(panes[1])!}
+                            allNotes={notes}
+                            onUpdate={handleUpdateNote}
+                            onLinkClick={handleLinkClick}
+                            onRefactorLinks={handleRefactorLinks}
+                            onCreateNoteWithContent={handleCreateSpecificNote}
+                            fontSize={fontSize}
+                            isActive={activePaneIndex === 1}
+                        />
+                    </div>
                 ) : (
                     <EmptyState onCreate={handleCreateNote} />
                 )}
              </div>
           )}
         </div>
+      </div>
+
+      {/* Mobile Bottom Toolbar (Restored) */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 flex items-center justify-between px-6 pt-3 pb-12">
+        <div className="flex items-center gap-6">
+            <button
+                onClick={handleOpenDailyNote}
+                className="text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+            >
+                <Calendar size={24} strokeWidth={1.5} />
+            </button>
+            <button
+                onClick={() => setShowTasks(true)}
+                className="text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+            >
+                <CheckSquare size={24} strokeWidth={1.5} />
+            </button>
+            <button
+                onClick={handleOpenRandomNote}
+                className="text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+            >
+                <Shuffle size={24} strokeWidth={1.5} />
+            </button>
+             <button
+                onClick={handleSync}
+                disabled={!dropboxToken && !dropboxRefreshToken || syncStatus === 'syncing'}
+                className={`${
+                    (!dropboxToken && !dropboxRefreshToken)
+                        ? 'text-slate-300 dark:text-slate-600' 
+                        : syncStatus === 'error'
+                            ? 'text-red-500'
+                            : syncStatus === 'success'
+                                ? 'text-green-500'
+                                : 'text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
+                }`}
+            >
+                {syncStatus === 'syncing' ? (
+                    <RefreshCw size={24} strokeWidth={1.5} className="animate-spin" />
+                ) : syncStatus === 'success' ? (
+                    <Check size={24} strokeWidth={1.5} />
+                ) : syncStatus === 'error' ? (
+                    <AlertCircle size={24} strokeWidth={1.5} />
+                ) : (
+                    <Cloud size={24} strokeWidth={1.5} />
+                )}
+            </button>
+        </div>
+
+        <button
+            onClick={handleCreateNote}
+            className="w-12 h-12 flex items-center justify-center bg-indigo-600 text-white rounded-full shadow-lg shadow-indigo-600/30 active:scale-95 transition-transform"
+        >
+            <Plus size={24} />
+        </button>
       </div>
 
       {showSettings && (
