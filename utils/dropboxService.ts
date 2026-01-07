@@ -340,9 +340,14 @@ export const syncDropboxData = async (
 
     // ==================== STEP 5: Three-Way Merge Decision ====================
     
+    console.log('=== SYNC STEP 5: Three-Way Merge ===');
+    console.log('Local notes count:', localNotes.length);
+    console.log('Remote notes count:', canonicalRemoteNotes.size);
+    console.log('Unsynced note IDs:', Array.from(unsyncedNoteIds));
+    
     const notesToUpload: Note[] = [];
     const notesToDownload: RemoteNoteData[] = [];
-    const staleRemotePaths: string[] = []; // Old paths that need deletion
+    const staleRemotePaths: string[] = [];
     
     // Build final notes map (ID -> Note) to avoid duplicates
     const finalNotesMap = new Map<string, Note>();
@@ -351,6 +356,8 @@ export const syncDropboxData = async (
     localNotes.forEach(note => {
         finalNotesMap.set(note.id, note);
     });
+    
+    console.log('Baseline finalNotesMap size:', finalNotesMap.size);
 
     // Index local notes by ID for quick lookup
     const localNotesById = new Map<string, Note>();
@@ -360,14 +367,20 @@ export const syncDropboxData = async (
     localNotes.forEach(localNote => {
         const remoteData = canonicalRemoteNotes.get(localNote.id);
         
+        console.log(`Processing note: ${localNote.id} (${localNote.title})`);
+        console.log('  - Has remote data:', !!remoteData);
+        console.log('  - Is in unsyncedNoteIds:', unsyncedNoteIds.has(localNote.id));
+        
         if (!remoteData) {
             // Note exists only locally
+            console.log(`  → Only local (new note)`);
             if (!localNote.deletedAt) {
                 notesToUpload.push(localNote);
                 log.push(`Will upload (new): ${localNote.title}`);
             }
             // CRITICAL FIX: Add local note to final map
             finalNotesMap.set(localNote.id, localNote);
+            console.log(`  → Added to finalNotesMap`);
         } else {
             // Note exists both locally and remotely
             const remoteNote = remoteData.note;
@@ -375,6 +388,7 @@ export const syncDropboxData = async (
             
             // CRITICAL: Check if this note has unsynced local changes
             const hasUnsyncedChanges = unsyncedNoteIds.has(localNote.id);
+            console.log(`  → Both local and remote, hasUnsyncedChanges: ${hasUnsyncedChanges}`);
             
             // Calculate expected path for local note
             const localExpectedPath = getNotePath(localNote.title, localNote.folderId, mergedFolders);
@@ -388,6 +402,7 @@ export const syncDropboxData = async (
             
             if (hasUnsyncedChanges) {
                 // Local has unsynced changes - ALWAYS prioritize local
+                console.log(`  → Prioritizing local (unsynced)`);
                 notesToUpload.push(localNote);
                 if (!pathsMatch) {
                     staleRemotePaths.push(actualRemotePath);
@@ -397,28 +412,27 @@ export const syncDropboxData = async (
             } else if (!pathsMatch) {
                 // Path mismatch detected
                 if (localTime > remoteTime + 2000) {
-                    // Local is significantly newer
+                    console.log(`  → Path mismatch, local newer`);
                     notesToUpload.push(localNote);
                     staleRemotePaths.push(actualRemotePath);
                     log.push(`Path mismatch (local newer): ${localNote.title} -> will upload to new path`);
                     finalNotesMap.set(localNote.id, localNote);
                 } else {
-                    // Remote is newer or equal
+                    console.log(`  → Path mismatch, remote newer`);
                     log.push(`Path mismatch (remote newer): "${localNote.title}" -> "${remoteNote.title}" - will adopt remote`);
                     finalNotesMap.set(localNote.id, remoteNote);
                     notesToDownload.push(remoteData);
                 }
             } else if (timeDiff <= 2000) {
-                // Timestamps are essentially equal and paths match - no conflict
-                // Keep local version
+                console.log(`  → Timestamps equal, keeping local`);
                 finalNotesMap.set(localNote.id, localNote);
             } else if (localTime > remoteTime) {
-                // Local is newer (same path)
+                console.log(`  → Local newer`);
                 notesToUpload.push(localNote);
                 log.push(`Will upload (local newer): ${localNote.title}`);
                 finalNotesMap.set(localNote.id, localNote);
             } else {
-                // Remote is newer (same path)
+                console.log(`  → Remote newer`);
                 notesToDownload.push(remoteData);
                 log.push(`Will download (remote newer): ${localNote.title}`);
                 finalNotesMap.set(localNote.id, remoteNote);
@@ -428,6 +442,8 @@ export const syncDropboxData = async (
             canonicalRemoteNotes.delete(localNote.id);
         }
     });
+    
+    console.log('After processing local notes, finalNotesMap size:', finalNotesMap.size);
 
     // Process remaining remote notes (not in local)
     canonicalRemoteNotes.forEach((remoteData) => {
@@ -438,6 +454,10 @@ export const syncDropboxData = async (
     
     // Convert map to array for return
     const finalNotes = Array.from(finalNotesMap.values());
+    console.log('=== SYNC COMPLETE ===');
+    console.log('Final notes count:', finalNotes.length);
+    console.log('Notes to upload:', notesToUpload.length);
+    console.log('Notes to download:', notesToDownload.length);
 
     // ==================== STEP 6: Create Missing Remote Folders ====================
     
