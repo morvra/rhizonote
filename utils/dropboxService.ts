@@ -402,7 +402,7 @@ export const syncDropboxData = async (
     });
 
     // Process remaining remote notes (not in local)
-    canonicalRemoteNotes.forEach((remoteData, noteId) => {
+    canonicalRemoteNotes.forEach((remoteData) => {
         notesToDownload.push(remoteData);
         log.push(`Will download (new from remote): ${remoteData.note.title}`);
         finalNotes.push(remoteData.note);
