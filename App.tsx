@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import Editor from './components/Editor';
 import { Note, Folder, SortField, SortDirection, Theme } from './types';
@@ -394,7 +394,7 @@ export default function App() {
       setSyncMessage('');
   };
 
-  const handleSync = useCallback(async () => {
+  const handleSync = async () => {
       console.log('=== handleSync called ===');
       console.log('unsyncedNoteIds:', Array.from(unsyncedNoteIds.current));
       
@@ -405,20 +405,29 @@ export default function App() {
           return;
       }
       
-      // Get latest state using refs
-      const latestNotesRef = { current: notes };
-      const latestFoldersRef = { current: folders };
-      
-      setNotes(n => { latestNotesRef.current = n; return n; });
-      setFolders(f => { latestFoldersRef.current = f; return f; });
-      
-      console.log('Latest notes count:', latestNotesRef.current.length);
-      console.log('Latest notes IDs:', latestNotesRef.current.map(n => `${n.id}:${n.title}`));
-      
       setSyncStatus('syncing');
       setSyncMessage('Syncing changes...');
       
       try {
+          // ✅ Capture latest state at sync time
+          let latestNotes: Note[] = [];
+          let latestFolders: Folder[] = [];
+          
+          // Use functional setState to get current values
+          await new Promise<void>(resolve => {
+              setNotes(current => {
+                  latestNotes = current;
+                  console.log('Captured notes count:', latestNotes.length);
+                  console.log('Captured notes:', latestNotes.map(n => `${n.id}:${n.title}`).join(', '));
+                  return current;
+              });
+              setFolders(current => {
+                  latestFolders = current;
+                  resolve();
+                  return current;
+              });
+          });
+          
           const auth = {
               accessToken: dropboxToken,
               refreshToken: dropboxRefreshToken
@@ -426,8 +435,8 @@ export default function App() {
 
           const data = await syncDropboxData(
               auth, 
-              latestNotesRef.current,
-              latestFoldersRef.current, 
+              latestNotes,
+              latestFolders, 
               deletedPaths, 
               pendingRenames,
               unsyncedNoteIds.current
@@ -453,7 +462,7 @@ export default function App() {
           setSyncMessage('Sync failed. Check console.');
       }
       setTimeout(() => { if(syncStatus !== 'error') setSyncStatus('idle'); }, 4000);
-  }, [dropboxToken, dropboxRefreshToken, notes, folders, deletedPaths, pendingRenames, syncStatus]);
+  };
 
   // 同期中フラグと最終同期時刻をRefで管理
   const isSyncingRef = useRef(false);
