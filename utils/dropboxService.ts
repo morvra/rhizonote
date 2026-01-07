@@ -342,9 +342,16 @@ export const syncDropboxData = async (
     const notesToUpload: Note[] = [];
     const notesToDownload: RemoteNoteData[] = [];
     const staleRemotePaths: string[] = []; // Old paths that need deletion
-    const finalNotes: Note[] = [];
     
-    // Index local notes by ID
+    // Build final notes map (ID -> Note) to avoid duplicates
+    const finalNotesMap = new Map<string, Note>();
+    
+    // First, add all local notes to the map as baseline
+    localNotes.forEach(note => {
+        finalNotesMap.set(note.id, note);
+    });
+
+    // Index local notes by ID for quick lookup
     const localNotesById = new Map<string, Note>();
     localNotes.forEach(note => localNotesById.set(note.id, note));
 
@@ -358,7 +365,7 @@ export const syncDropboxData = async (
                 notesToUpload.push(localNote);
                 log.push(`Will upload (new): ${localNote.title}`);
             }
-            finalNotes.push(localNote);
+            // Keep local version in finalNotesMap (already added above)
         } else {
             // Note exists both locally and remotely
             const remoteNote = remoteData.note;
@@ -380,20 +387,20 @@ export const syncDropboxData = async (
                 notesToUpload.push(localNote);
                 staleRemotePaths.push(actualRemotePath);
                 log.push(`Path mismatch: ${localNote.title} - will upload to new path`);
-                finalNotes.push(localNote);
+                finalNotesMap.set(localNote.id, localNote);
             } else if (timeDiff <= 2000) {
                 // Timestamps are essentially equal - no conflict
-                finalNotes.push(localNote);
+                // Keep local version (already in map)
             } else if (localTime > remoteTime) {
                 // Local is newer
                 notesToUpload.push(localNote);
                 log.push(`Will upload (local newer): ${localNote.title}`);
-                finalNotes.push(localNote);
+                finalNotesMap.set(localNote.id, localNote);
             } else {
-                // Remote is newer
+                // Remote is newer - replace local with remote
                 notesToDownload.push(remoteData);
                 log.push(`Will download (remote newer): ${localNote.title}`);
-                finalNotes.push(remoteNote);
+                finalNotesMap.set(localNote.id, remoteNote);
             }
             
             // Mark as processed
@@ -405,8 +412,11 @@ export const syncDropboxData = async (
     canonicalRemoteNotes.forEach((remoteData) => {
         notesToDownload.push(remoteData);
         log.push(`Will download (new from remote): ${remoteData.note.title}`);
-        finalNotes.push(remoteData.note);
+        finalNotesMap.set(remoteData.note.id, remoteData.note);
     });
+    
+    // Convert map to array for return
+    const finalNotes = Array.from(finalNotesMap.values());
 
     // ==================== STEP 6: Create Missing Remote Folders ====================
     
