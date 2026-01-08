@@ -89,13 +89,134 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, onLinkClick, currentNoteTitle
     );
 };
 
+// Simple Markdown Parser for Preview Mode
+const parseInline = (text: string) => {
+    return text
+        // Escape HTML characters to prevent XSS (basic)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        // Bold
+        .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>')
+        // Italic
+        .replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
+        // Strikethrough
+        .replace(/~~(.*?)~~/g, '<del class="line-through text-slate-400">$1</del>')
+        // Inline Code
+        .replace(/`([^`]+)`/g, '<code class="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-sm font-mono text-indigo-600 dark:text-indigo-400">$1</code>')
+        // Images: ![alt](url)
+        .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="max-w-full rounded-lg my-2 border border-gray-200 dark:border-slate-800" />')
+        // Links: [text](url)
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">$1</a>')
+        // Wiki Links: [[Title]]
+        .replace(/\[\[(.*?)\]\]/g, '<span class="wiki-link text-indigo-600 dark:text-indigo-400 cursor-pointer hover:underline font-medium" data-link="$1">$1</span>');
+};
+
+const renderMarkdown = (content: string) => {
+    let html = '';
+    let inCodeBlock = false;
+    let taskIndex = 0;
+
+    const lines = content.split('\n');
+    
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        // Code Block Toggle
+        if (line.trim().startsWith('```')) {
+            inCodeBlock = !inCodeBlock;
+            html += inCodeBlock 
+                ? '<pre class="bg-gray-100 dark:bg-slate-800 p-4 rounded-lg overflow-x-auto my-4 font-mono text-sm text-slate-800 dark:text-slate-200"><code>' 
+                : '</code></pre>';
+            continue;
+        }
+
+        if (inCodeBlock) {
+            html += line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + '\n';
+            continue;
+        }
+
+        // Headers
+        if (line.startsWith('# ')) {
+            html += `<h1 class="text-3xl font-bold mb-4 mt-2 text-slate-900 dark:text-white">${parseInline(line.slice(2))}</h1>`;
+            continue;
+        }
+        if (line.startsWith('## ')) {
+            html += `<h2 class="text-2xl font-bold mb-3 mt-6 text-slate-800 dark:text-slate-100 border-b border-gray-200 dark:border-slate-800 pb-2">${parseInline(line.slice(3))}</h2>`;
+            continue;
+        }
+        if (line.startsWith('### ')) {
+            html += `<h3 class="text-xl font-bold mb-2 mt-4 text-slate-800 dark:text-slate-100">${parseInline(line.slice(4))}</h3>`;
+            continue;
+        }
+        
+        // Blockquote
+        if (line.startsWith('> ')) {
+            html += `<blockquote class="border-l-4 border-gray-300 dark:border-slate-700 pl-4 italic my-4 text-slate-600 dark:text-slate-400">${parseInline(line.slice(2))}</blockquote>`;
+            continue;
+        }
+
+        // Task List (Updated to respect indentation)
+        const taskMatch = line.match(/^(\s*)([-*]|\d+\.)\s+\[([ x])\]\s(.*)$/);
+        if (taskMatch) {
+            const indentSpace = taskMatch[1].length;
+            const isChecked = taskMatch[3] === 'x';
+            const text = taskMatch[4];
+            const currentTaskIndex = taskIndex++;
+            // Calculate margin: roughly 12px per space char
+            const marginLeft = indentSpace * 12;
+
+            html += `<div class="flex items-start gap-2 my-1" style="margin-left: ${marginLeft}px">
+                <input type="checkbox" ${isChecked ? 'checked' : ''} class="mt-1.5 cursor-pointer" data-task-index="${currentTaskIndex}">
+                <span class="${isChecked ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'}">${parseInline(text)}</span>
+            </div>`;
+            continue;
+        }
+
+        // Unordered List (Updated to respect indentation)
+        const ulMatch = line.match(/^(\s*)-\s(.*)$/);
+        if (ulMatch) {
+             const indentSpace = ulMatch[1].length;
+             // Base indentation of 20px plus dynamic
+             const marginLeft = 20 + (indentSpace * 12);
+             html += `<li class="list-disc text-slate-700 dark:text-slate-300" style="margin-left: ${marginLeft}px">${parseInline(ulMatch[2])}</li>`;
+             continue;
+        }
+        
+        // Ordered List (Updated to respect indentation)
+        const olMatch = line.match(/^(\s*)\d+\.\s(.*)$/);
+        if (olMatch) {
+             const indentSpace = olMatch[1].length;
+             const marginLeft = 20 + (indentSpace * 12);
+             html += `<li class="list-decimal text-slate-700 dark:text-slate-300" style="margin-left: ${marginLeft}px">${parseInline(olMatch[2])}</li>`;
+             continue;
+        }
+
+        // Horizontal Rule
+        if (line.trim() === '---' || line.trim() === '***') {
+            html += '<hr class="my-6 border-gray-200 dark:border-slate-800" />';
+            continue;
+        }
+
+        // Empty line
+        if (line.trim() === '') {
+            html += '<br>';
+            continue;
+        }
+
+        // Regular paragraph
+        html += `<p class="mb-2 text-slate-700 dark:text-slate-300 leading-relaxed">${parseInline(line)}</p>`;
+    }
+
+    return { __html: html };
+};
+
 const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, onRefactorLinks, onCreateNoteWithContent, fontSize, isActive = true, highlightedLine }) => {
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  
+  const [isMobile, setIsMobile] = useState(false);
+
   // Toggle Mode Shortcut (Ctrl+E / Cmd+E) and Custom Event Listener
   useEffect(() => {
     const handleWindowKeyDown = (e: KeyboardEvent) => {
@@ -121,6 +242,14 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         window.removeEventListener('rhizonote-toggle-preview', handleCustomToggle);
     };
   }, [isActive]);
+
+  // Mobile Detection
+  useEffect(() => {
+      const checkMobile = () => setIsMobile(window.innerWidth < 768);
+      checkMobile();
+      window.addEventListener('resize', checkMobile);
+      return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Track where the cursor *was* before the current interaction
   const prevSelectionRef = useRef<number>(0);
@@ -450,17 +579,26 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
     if (start !== end) {
         const text = note.content.substring(start, end);
-        const coords = measureSelection(start, end);
         
-        if (coords) {
-            setSelectionMenu({
-                top: coords.top,
-                left: coords.left,
-                text,
-                start,
-                end
-            });
+        let top = 0;
+        let left = 0;
+
+        // Skip heavy measurement on mobile; we use fixed positioning
+        if (!isMobile) {
+            const coords = measureSelection(start, end);
+            if (coords) {
+                top = coords.top;
+                left = coords.left;
+            }
         }
+        
+        setSelectionMenu({
+            top,
+            left,
+            text,
+            start,
+            end
+        });
     } else {
         setSelectionMenu(null);
     }
@@ -569,6 +707,11 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   };
 
   const handleContentClick = (e: React.MouseEvent<HTMLTextAreaElement>) => {
+    // Re-evaluate selection on click.
+    // This ensures the toolbar appears for drag/double-click selections (where selection exists)
+    // and disappears for simple clicks (where selection is collapsed).
+    updateSelectionMenu();
+
     const target = e.target as HTMLTextAreaElement;
     const currentClickIndex = target.selectionStart;
     const content = note.content;
@@ -599,9 +742,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             return;
         }
     }
-
-    // PRIORITY 2: LINK NAVIGATION (REMOVED)
-    // Handled in handleMouseDown to prevent cursor movement.
     
     updateLineTracking();
     checkAutocomplete(currentClickIndex, content);
@@ -934,162 +1074,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       });
   };
 
-  const renderMarkdown = (text: string) => {
-    // Create a set of existing titles for quick lookup
-    const existingTitles = new Set(allNotes.filter(n => !n.deletedAt).map(n => n.title));
-
-    let html = text
-      .replace(/^# (.*$)/gm, '<h1 class="text-3xl font-bold mb-3 text-slate-800 dark:text-slate-100 border-b border-gray-200 dark:border-slate-700 pb-2">$1</h1>')
-      .replace(/^## (.*$)/gm, '<h2 class="text-2xl font-bold my-4 text-slate-700 dark:text-slate-200">$1</h2>')
-      .replace(/^### (.*$)/gm, '<h3 class="text-xl font-bold my-3 text-slate-600 dark:text-slate-300">$1</h3>');
-    
-    // Blockquote
-    html = html.replace(/^> (.*$)/gm, '<blockquote class="border-l-4 border-indigo-500/50 pl-4 italic text-slate-600 dark:text-slate-400 my-4">$1</blockquote>');
-
-    html = html
-      .replace(/(`[^`]+`)/g, '<code class="bg-gray-100 dark:bg-slate-800 px-1 py-0.5 rounded text-amber-700 dark:text-amber-200 text-sm font-mono">$1</code>')
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>');
-    
-    // Images ![alt](url)
-    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="max-w-full h-auto rounded-lg shadow-sm my-4" />');
-
-    // Links [text](url)
-    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">$1</a>');
-    
-    // Auto-link <url>
-    html = html.replace(/<(https?:\/\/[^>]+)>/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">$1</a>');
-
-    // Auto-link Raw URLs (not inside quotes or other tags)
-    html = html.replace(/(^|[^"'])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">$2</a>');
-
-    // Interactive Tasks (Place BEFORE lists to prevent tasks being consumed by list regex)
-    let taskIndex = 0;
-    // Regex for both checked and unchecked to ensure correct indexing
-    html = html.replace(/^(\s*)([-\*]|\d+\.)\s+\[([ x])\]\s(.*$)/gm, (_match, indent, _bullet, state, content) => {
-        const idx = taskIndex++;
-        const isChecked = state === 'x';
-        const opacity = isChecked ? 'opacity-50' : 'opacity-80';
-        const decoration = isChecked ? 'line-through text-slate-500' : 'text-slate-700 dark:text-slate-300';
-        const indentLevel = Math.floor(indent.length / 2);
-        const marginLeft = indentLevel * 24; // 24px per indent level
-        
-        return `<div class="flex items-start gap-3 my-2 ${opacity}" style="margin-left: ${marginLeft}px"><input type="checkbox" ${isChecked ? 'checked' : ''} data-task-index="${idx}" class="mt-1.5 rounded border-gray-400 dark:border-slate-600 bg-transparent transform scale-110 cursor-pointer pointer-events-auto"><span class="${decoration}">${content}</span></div>`;
-    });
-
-    // Lists Replacement with Wrapping (with nested list support)
-    // Process lists line by line to preserve indentation
-    const lines = html.split(/\r?\n/);
-    const processedLines: string[] = [];
-    let inList = false;
-    let currentIndentLevel = 0;
-    const listStack: { type: 'ul' | 'ol', indent: number }[] = [];
-
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        
-        // Check if line is a list item (unordered or ordered)
-        const unorderedMatch = line.match(/^(\s*)([-\*])\s+(.*)$/);
-        const orderedMatch = line.match(/^(\s*)(\d+\.)\s+(.*)$/);
-        
-        if (unorderedMatch || orderedMatch) {
-            const match = unorderedMatch || orderedMatch;
-            const indent = match![1];
-            const indentLevel = Math.floor(indent.length / 2);
-            const content = match![3];
-            const isOrdered = !!orderedMatch;
-            const newListType = isOrdered ? 'ol' : 'ul';
-            
-            if (!inList) {
-                // Start new list
-                processedLines.push(`<${newListType} class="my-4 ml-6">`);
-                inList = true;
-                currentIndentLevel = indentLevel;
-                listStack.push({ type: newListType, indent: indentLevel });
-            } else {
-                // Check if we need to nest or unnest
-                if (indentLevel > currentIndentLevel) {
-                    // Start nested list (add margin for additional indentation)
-                    const additionalIndent = (indentLevel - currentIndentLevel) * 24;
-                    processedLines.push(`<${newListType} class="ml-6" style="margin-left: ${additionalIndent}px">`);
-                    listStack.push({ type: newListType, indent: indentLevel });
-                    currentIndentLevel = indentLevel;
-                } else if (indentLevel < currentIndentLevel) {
-                    // Close nested lists until we reach the right level
-                    while (listStack.length > 0 && listStack[listStack.length - 1].indent > indentLevel) {
-                        const closingList = listStack.pop()!;
-                        processedLines.push(`</${closingList.type}></li>`);
-                    }
-                    currentIndentLevel = indentLevel;
-                    
-                    // If list type changed at same level, close and open new
-                    if (listStack.length > 0 && listStack[listStack.length - 1].type !== newListType) {
-                        const oldList = listStack.pop()!;
-                        processedLines.push(`</${oldList.type}>`);
-                        processedLines.push(`<${newListType} class="ml-6">`);
-                        listStack.push({ type: newListType, indent: indentLevel });
-                    }
-                } else if (listStack.length > 0 && listStack[listStack.length - 1].type !== newListType) {
-                    // Same level but different type
-                    const oldList = listStack.pop()!;
-                    processedLines.push(`</${oldList.type}>`);
-                    processedLines.push(`<${newListType} class="ml-6">`);
-                    listStack.push({ type: newListType, indent: indentLevel });
-                }
-            }
-            
-            // Use list-disc or list-decimal classes for proper bullet/number display
-            const listStyleClass = isOrdered ? 'list-decimal' : 'list-disc';
-            processedLines.push(`<li class="${listStyleClass} text-slate-700 dark:text-slate-300 my-1">${content}</li>`);
-        } else {
-            // Not a list item
-            if (inList) {
-                // Close all open lists
-                while (listStack.length > 0) {
-                    const closingList = listStack.pop()!;
-                    processedLines.push(`</${closingList.type}>`);
-                }
-                inList = false;
-                currentIndentLevel = 0;
-            }
-            processedLines.push(line);
-        }
-    }
-    
-    // Close any remaining open lists
-    if (inList) {
-        while (listStack.length > 0) {
-            const closingList = listStack.pop()!;
-            processedLines.push(`</${closingList.type}>`);
-        }
-    }
-    
-    html = processedLines.join('\n');
-
-    // Consume one newline immediately after block elements to prevent double spacing with the subsequent <br/>
-    // Blocks: h1-h6, li, blockquote, div (tasks), ul, ol
-    html = html.replace(/(<\/(h[1-6]|li|blockquote|div|ul|ol)>)(\r\n|\n|\r)/g, '$1');
-
-    // Also consume newlines after opening ul/ol tags to prevent <br> insertion
-    html = html.replace(/(<(ul|ol)[^>]*>)(\r\n|\n|\r)/g, '$1');
-
-    // Convert all remaining newlines to line breaks to preserve formatting
-    html = html.replace(/(\r\n|\n|\r)/g, '<br/>');
-
-    html = html.replace(
-      /\[\[(.*?)\]\]/g, 
-      (match, p1) => {
-          const exists = existingTitles.has(p1);
-          const style = exists 
-            ? 'text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 underline font-medium'
-            : 'text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 underline opacity-60';
-          
-          return `<span class="${style} cursor-pointer wiki-link" data-link="${p1}">${match}</span>`;
-      }
-    );
-    return { __html: html };
-  };
-
   const handlePreviewTaskToggle = (taskIndex: number) => {
     const lines = note.content.split('\n');
     let currentTaskCount = 0;
@@ -1200,10 +1184,12 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 value={note.content}
                 onChange={handleChange}
                 onClick={handleContentClick}
+                onSelect={updateSelectionMenu}
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseLeave={() => { if(textareaRef.current) textareaRef.current.style.cursor = 'text'; }}
                 onMouseUp={handleMouseUp}
+                onTouchEnd={handleMouseUp}
                 onKeyDown={handleKeyDown}
                 onKeyUp={handleKeyUp}
                 onBlur={() => setSelectionMenu(null)}
@@ -1216,8 +1202,16 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 {/* Selection Toolbar */}
                 {selectionMenu && (
                     <div 
-                        className="absolute z-50 flex items-center bg-slate-900 dark:bg-slate-200 rounded-md shadow-xl border border-slate-700 dark:border-slate-300 p-1 gap-0.5 -translate-x-1/2 -translate-y-full mt-[-10px] animate-in fade-in zoom-in-95 duration-100"
-                        style={{ top: selectionMenu.top, left: selectionMenu.left }}
+                        className={`
+                            z-50 flex items-center bg-slate-900 dark:bg-slate-200 shadow-xl border border-slate-700 dark:border-slate-300 gap-0.5 animate-in fade-in duration-100
+                            ${isMobile 
+                                // Mobile: Fixed at TOP, avoiding keyboard and bottom toolbar
+                                ? 'fixed left-1/2 -translate-x-1/2 top-28 rounded-full px-5 py-2.5 shadow-2xl border-opacity-50 dark:border-opacity-50 gap-4' 
+                                // Desktop: Absolute positioning near text
+                                : 'absolute rounded-md p-1 -translate-x-1/2 -translate-y-full mt-[-10px] zoom-in-95'
+                            }
+                        `}
+                        style={!isMobile ? { top: selectionMenu.top, left: selectionMenu.left } : {}}
                         onMouseDown={(e) => e.preventDefault()} // Prevent blur
                     >
                         {/* 1. Less than 1 line (No newlines) */}
@@ -1225,35 +1219,35 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                             <>
                                 <button 
                                     onClick={() => handleWrapText('**')}
-                                    className="p-1.5 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded"
+                                    className="p-1.5 md:p-1 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded"
                                     title="Bold"
                                 >
                                     <Bold size={14} />
                                 </button>
                                 <button 
                                     onClick={() => handleWrapText('*')}
-                                    className="p-1.5 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded"
+                                    className="p-1.5 md:p-1 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded"
                                     title="Italic"
                                 >
                                     <Italic size={14} />
                                 </button>
                                 <button 
                                     onClick={() => handleWrapText('~~')}
-                                    className="p-1.5 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded"
+                                    className="p-1.5 md:p-1 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded"
                                     title="Strikethrough"
                                 >
                                     <Strikethrough size={14} />
                                 </button>
                                 <button 
                                     onClick={() => handleWrapText('`')}
-                                    className="p-1.5 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded"
+                                    className="p-1.5 md:p-1 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded"
                                     title="Code"
                                 >
                                     <Code size={14} />
                                 </button>
                                 <button 
                                     onClick={() => handleWrapText('[[')}
-                                    className="p-1.5 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded"
+                                    className="p-1.5 md:p-1 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded"
                                     title="Link"
                                 >
                                     <LinkIcon size={14} />
@@ -1273,8 +1267,10 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                             </button>
                         )}
                         
-                        {/* Tail */}
-                        <div className="absolute left-1/2 bottom-0 w-2 h-2 bg-slate-900 dark:bg-slate-200 translate-y-1/2 -translate-x-1/2 rotate-45 border-r border-b border-slate-700 dark:border-slate-300"></div>
+                        {/* Tail (Desktop Only) */}
+                        {!isMobile && (
+                            <div className="absolute left-1/2 bottom-0 w-2 h-2 bg-slate-900 dark:bg-slate-200 translate-y-1/2 -translate-x-1/2 rotate-45 border-r border-b border-slate-700 dark:border-slate-300"></div>
+                        )}
                     </div>
                 )}
 
