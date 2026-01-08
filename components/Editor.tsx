@@ -246,6 +246,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const backdropRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [isComposing, setIsComposing] = useState(false);
 
   // Toggle Mode Shortcut (Ctrl+E / Cmd+E) and Custom Event Listener
   useEffect(() => {
@@ -850,6 +851,61 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         }
         return;
     }
+
+    // New Shortcut: Ctrl+Shift+C (Toggle Task)
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        const start = target.selectionStart;
+        const value = target.value;
+        
+        // Find line start/end
+        const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+        let lineEnd = value.indexOf('\n', start);
+        if (lineEnd === -1) lineEnd = value.length;
+        
+        const currentLine = value.slice(lineStart, lineEnd);
+        let newLine = currentLine;
+        let newPos = start;
+
+        // Check for Task
+        const taskMatch = currentLine.match(/^(\s*)-\s\[([ x])\]\s(.*)$/);
+        if (taskMatch) {
+            // Task -> Normal Text
+            // Remove "- [ ] " (6 chars)
+            newLine = taskMatch[1] + taskMatch[3];
+            if (start >= lineStart + taskMatch[1].length + 6) {
+                newPos = start - 6;
+            } else if (start > lineStart + taskMatch[1].length) {
+                newPos = lineStart + taskMatch[1].length;
+            }
+        } else {
+            // Check for List
+            const listMatch = currentLine.match(/^(\s*)-\s(.*)$/);
+            if (listMatch) {
+                // List -> Task
+                // Insert "[ ] " (4 chars) after "- "
+                newLine = `${listMatch[1]}- [ ] ${listMatch[2]}`;
+                if (start >= lineStart + listMatch[1].length + 2) {
+                    newPos = start + 4;
+                }
+            } else {
+                // Normal -> Task
+                // Insert "- [ ] " (6 chars) at start of content
+                const indentMatch = currentLine.match(/^(\s*)(.*)$/);
+                const indent = indentMatch ? indentMatch[1] : '';
+                const content = indentMatch ? indentMatch[2] : currentLine;
+                newLine = `${indent}- [ ] ${content}`;
+                 if (start >= lineStart + indent.length) {
+                    newPos = start + 6;
+                }
+            }
+        }
+
+        const newValue = value.slice(0, lineStart) + newLine + value.slice(lineEnd);
+        onUpdate(note.id, { content: newValue });
+        pendingCursorRef.current = newPos;
+        return;
+    }
     
     // Line Moving: Ctrl/Cmd + Arrow Up/Down (Modified for Multi-line Support)
     if ((e.metaKey || e.ctrlKey) && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
@@ -1281,7 +1337,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 {/* Backdrop: Syntax Highlighting */}
                 <div 
                     ref={backdropRef}
-                    className="min-h-full px-8 pt-4 pb-12 font-sans text-slate-800 dark:text-slate-300 whitespace-pre-wrap break-words pointer-events-none"
+                    className={`min-h-full px-8 pt-4 pb-12 font-sans text-slate-800 dark:text-slate-300 whitespace-pre-wrap break-words pointer-events-none ${isComposing ? 'opacity-0' : 'opacity-100'}`}
                     style={{ fontSize: `${fontSize}px`, lineHeight: 1.6 }}
                     aria-hidden="true"
                 >
@@ -1293,6 +1349,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 ref={textareaRef}
                 value={note.content}
                 onChange={handleChange}
+                onCompositionStart={() => setIsComposing(true)}
+                onCompositionEnd={() => setIsComposing(false)}
                 onClick={handleContentClick}
                 onSelect={updateSelectionMenu}
                 onMouseDown={handleMouseDown}
@@ -1303,7 +1361,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 onKeyDown={handleKeyDown}
                 onKeyUp={handleKeyUp}
                 onBlur={() => setSelectionMenu(null)}
-                className="absolute inset-0 w-full h-full px-8 pt-4 pb-12 bg-transparent text-transparent caret-indigo-600 dark:caret-slate-200 font-sans resize-none focus:outline-none z-10 overflow-hidden"
+                className={`absolute inset-0 w-full h-full px-8 pt-4 pb-12 bg-transparent caret-indigo-600 dark:caret-slate-200 font-sans resize-none focus:outline-none z-10 overflow-hidden ${isComposing ? 'text-slate-800 dark:text-slate-300' : 'text-transparent'}`}
                 style={{ fontSize: `${fontSize}px`, lineHeight: 1.6 }}
                 placeholder="Start typing..."
                 spellCheck={false}
