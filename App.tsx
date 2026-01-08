@@ -599,7 +599,7 @@ export default function App() {
           if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) {
               e.preventDefault();
               setTaskSelectedIndex(prev => (prev + 1) % visibleFlatTasks.length);
-          } else if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p')) {
+          } else if (e.key === 'ArrowUp') {
               e.preventDefault();
               setTaskSelectedIndex(prev => (prev - 1 + visibleFlatTasks.length) % visibleFlatTasks.length);
           } else if (e.key === ' ' && !e.repeat) {
@@ -1256,6 +1256,11 @@ export default function App() {
             e.preventDefault();
             setIsCommandPaletteOpen(prev => !prev);
         }
+        // New Shortcut: Ctrl+P for Command Palette
+        if (isMod && e.key.toLowerCase() === 'p') {
+            e.preventDefault();
+            setIsCommandPaletteOpen(prev => !prev);
+        }
     };
   }); 
 
@@ -1812,7 +1817,7 @@ export default function App() {
                     </button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-6 space-y-3">
-                     <ShortcutRow keys={['Ctrl', 'K']} description="Open Command Palette" />
+                     <ShortcutRow keys={['Ctrl', 'P']} description="Open Command Palette" />
                      <ShortcutRow keys={['Ctrl', 'Alt', 'N']} description="Create New Note" />
                      <ShortcutRow keys={['Ctrl', 'E']} description="Toggle Edit/Preview" />
                      <ShortcutRow keys={['Ctrl', 'D']} description="Open Daily Note" />
