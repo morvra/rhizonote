@@ -1890,7 +1890,7 @@ export default function App() {
                                          return (
                                              <div 
                                                 key={`${note.id}-${task.lineIndex}`} 
-                                                className={`flex items-start gap-3 p-2 rounded-md group transition-all duration-200
+                                                className={`flex items-center gap-3 p-2 rounded-md group transition-all duration-200
                                                     ${isSelected 
                                                         ? 'bg-indigo-50 dark:bg-indigo-900/20 shadow-sm border-l-4 border-indigo-500' 
                                                         : 'border-l-4 border-transparent hover:bg-gray-50 dark:hover:bg-slate-800/50'
@@ -1904,7 +1904,7 @@ export default function App() {
                                                     type="checkbox" 
                                                     checked={task.isChecked} 
                                                     onChange={() => handleToggleTaskFromModal(note.id, task.lineIndex, task.isChecked)}
-                                                    className="mt-1 rounded border-gray-400 dark:border-slate-600 bg-transparent transform scale-110 cursor-pointer"
+                                                    className="rounded border-gray-400 dark:border-slate-600 bg-transparent transform scale-110 cursor-pointer"
                                                  />
                                                  <div 
                                                     className="flex-1 cursor-pointer"
