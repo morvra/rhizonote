@@ -31,10 +31,9 @@ const extractLinks = (content: string): string[] => {
 interface NoteCardProps {
   note: Note;
   onLinkClick: (t: string) => void;
-  currentNoteTitle: string;
 }
 
-const NoteCard: React.FC<NoteCardProps> = ({ note, onLinkClick, currentNoteTitle }) => {
+const NoteCard: React.FC<NoteCardProps> = ({ note, onLinkClick }) => {
     return (
         <div 
             className={`
@@ -189,7 +188,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const backdropRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
-  const [isComposing, setIsComposing] = useState(false);
 
   useEffect(() => {
     const handleWindowKeyDown = (e: KeyboardEvent) => {
@@ -1069,8 +1067,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 ref={textareaRef}
                 value={note.content}
                 onChange={handleChange}
-                onCompositionStart={() => setIsComposing(true)}
-                onCompositionEnd={() => setIsComposing(false)}
                 onClick={handleContentClick}
                 onSelect={updateSelectionMenu}
                 onMouseDown={handleMouseDown}
@@ -1157,7 +1153,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                                         key={n.id} 
                                         note={n} 
                                         onLinkClick={onLinkClick} 
-                                        currentNoteTitle={note.title}
                                     />
                                 ))}
                             </div>
@@ -1184,7 +1179,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                                                     key={n.id} 
                                                     note={n} 
                                                     onLinkClick={onLinkClick} 
-                                                    currentNoteTitle={note.title}
                                                 />
                                             ))}
                                         </div>
