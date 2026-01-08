@@ -1079,7 +1079,7 @@ export default function App() {
               id: generateId(),
               folderId: null,
               title: title,
-              content: `# ${title}\n`,
+              content: '',
               isBookmarked: false,
               updatedAt: Date.now(),
               createdAt: Date.now()
