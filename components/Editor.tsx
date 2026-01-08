@@ -91,23 +91,53 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, onLinkClick, currentNoteTitle
 
 // Simple Markdown Parser for Preview Mode
 const parseInline = (text: string) => {
-    return text
-        // Escape HTML characters to prevent XSS (basic)
+    // We use a placeholder system to prevent nested replacements breaking HTML attributes
+    const placeholders: string[] = [];
+    const addPlaceholder = (content: string) => {
+        placeholders.push(content);
+        return `__PH_${placeholders.length - 1}__`;
+    };
+
+    let processed = text
+        // Escape HTML characters
         .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-        // Bold
+        
+        // Formatting (Bold, Italic, Strikethrough)
+        // Note: we do this before links so bold text can be inside a link
         .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>')
-        // Italic
         .replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
-        // Strikethrough
         .replace(/~~(.*?)~~/g, '<del class="line-through text-slate-400">$1</del>')
-        // Inline Code
-        .replace(/`([^`]+)`/g, '<code class="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-sm font-mono text-indigo-600 dark:text-indigo-400">$1</code>')
-        // Images: ![alt](url)
-        .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="max-w-full rounded-lg my-2 border border-gray-200 dark:border-slate-800" />')
-        // Links: [text](url)
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">$1</a>')
-        // Wiki Links: [[Title]]
-        .replace(/\[\[(.*?)\]\]/g, '<span class="wiki-link text-indigo-600 dark:text-indigo-400 cursor-pointer hover:underline font-medium" data-link="$1">$1</span>');
+
+        // Inline Code (Protected)
+        .replace(/`([^`]+)`/g, (match, code) => {
+             return addPlaceholder(`<code class="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-sm font-mono text-indigo-600 dark:text-indigo-400">${code}</code>`);
+        })
+
+        // Images (Protected)
+        .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, src) => {
+            return addPlaceholder(`<img src="${src}" alt="${alt}" class="max-w-full rounded-lg my-2 border border-gray-200 dark:border-slate-800" />`);
+        })
+
+        // Links (Protected)
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, txt, href) => {
+            return addPlaceholder(`<a href="${href}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">${txt}</a>`);
+        })
+
+        // Wiki Links (Protected)
+        .replace(/\[\[(.*?)\]\]/g, (match, title) => {
+            return addPlaceholder(`<span class="wiki-link text-indigo-600 dark:text-indigo-400 cursor-pointer hover:underline font-medium" data-link="${title}">${title}</span>`);
+        })
+
+        // Raw URLs (Processed last, on remaining text)
+        // Matches http/https not preceded by specific chars is tricky, but placeholders handles the "already linked" ones.
+        .replace(/(https?:\/\/[^\s)]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">$1</a>');
+
+    // Restore placeholders
+    placeholders.forEach((content, i) => {
+        processed = processed.replace(`__PH_${i}__`, content);
+    });
+
+    return processed;
 };
 
 const renderMarkdown = (content: string) => {
@@ -985,7 +1015,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                             <span key={i} className="text-amber-600 dark:text-amber-500">
                                 {'!['}{alt}{']('}
                                 <span 
-                                    className={`${isActive ? '' : 'underline cursor-pointer pointer-events-auto'} z-10 relative`}
+                                    className={`${isActive ? '' : 'underline decoration-amber-500/50 cursor-pointer pointer-events-auto'} z-10 relative`}
                                     data-url={url}
                                     data-line-index={index}
                                 >
@@ -1009,7 +1039,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                                 <span className="text-blue-600 dark:text-blue-400">{text}</span>
                                 {']('}
                                 <span 
-                                    className={`${isActive ? '' : 'underline cursor-pointer pointer-events-auto'} z-10 relative`}
+                                    className={`${isActive ? '' : 'underline decoration-blue-500/50 cursor-pointer pointer-events-auto'} z-10 relative`}
                                     data-url={url}
                                     data-line-index={index}
                                 >
