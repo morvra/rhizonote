@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Search, Command, ArrowRight, CornerDownLeft } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Search, Command, ArrowRight, CornerDownLeft, FileText } from 'lucide-react';
+import { Note } from '../types';
 
 export interface CommandItem {
   id: string;
@@ -14,9 +15,11 @@ interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
   commands: CommandItem[];
+  notes?: Note[];
+  onSelectNote?: (id: string) => void;
 }
 
-const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, commands }) => {
+const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, commands, notes, onSelectNote }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -32,11 +35,38 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, comman
     }
   }, [isOpen]);
 
-  // Filter commands based on query
-  const filteredCommands = commands.filter(cmd => 
-    cmd.label.toLowerCase().includes(query.toLowerCase()) ||
-    (cmd.group && cmd.group.toLowerCase().includes(query.toLowerCase()))
-  );
+  // Generate note commands based on query
+  const noteCommands: CommandItem[] = useMemo(() => {
+    if (!query.trim() || !notes || !onSelectNote) return [];
+    
+    const lowerQuery = query.toLowerCase();
+
+    return notes
+      .filter(n => !n.deletedAt)
+      .filter(n => {
+          const titleMatch = (n.title || 'Untitled').toLowerCase().includes(lowerQuery);
+          // Optional: search content too, but maybe prioritize title
+          const contentMatch = n.content.toLowerCase().includes(lowerQuery);
+          return titleMatch || contentMatch;
+      })
+      .slice(0, 10) // Limit to top 10 results
+      .map(n => ({
+        id: `search-note-${n.id}`,
+        label: n.title || 'Untitled',
+        icon: <FileText size={16} />,
+        group: 'Notes',
+        action: () => onSelectNote(n.id)
+      }));
+  }, [query, notes, onSelectNote]);
+
+  // Filter commands based on query and merge with note results
+  const filteredCommands = useMemo(() => {
+    const staticMatches = commands.filter(cmd => 
+        cmd.label.toLowerCase().includes(query.toLowerCase()) ||
+        (cmd.group && cmd.group.toLowerCase().includes(query.toLowerCase()))
+    );
+    return [...noteCommands, ...staticMatches];
+  }, [commands, query, noteCommands]);
 
   // Group commands for display
   const groupedCommands: { [key: string]: CommandItem[] } = {};
@@ -46,8 +76,8 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, comman
     groupedCommands[group].push(cmd);
   });
 
-  // Define group order priority
-  const groupOrder = ['Bookmarks', 'Actions', 'View', 'System'];
+  // Define group order priority - Reordered: Notes -> Bookmarks -> Actions
+  const groupOrder = ['Notes', 'Bookmarks', 'Actions', 'View', 'System'];
 
   // Sort groups based on priority, then alphabetical
   const sortedGroupKeys = Object.keys(groupedCommands).sort((a, b) => {
@@ -66,6 +96,11 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, comman
 
   // Flatten based on sorted keys to match visual order for keyboard navigation
   const flatList = sortedGroupKeys.flatMap(group => groupedCommands[group]);
+
+  useEffect(() => {
+    // Reset selection index when list changes, unless simply typing keeps the same top result valid
+    setSelectedIndex(0);
+  }, [flatList.length, query]); // Depend on query to reset when filtering changes
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -116,11 +151,10 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, comman
             ref={inputRef}
             type="text"
             className="flex-1 bg-transparent text-lg text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none"
-            placeholder="Type a command..."
+            placeholder="Type a command or search notes..."
             value={query}
             onChange={(e) => {
                 setQuery(e.target.value);
-                setSelectedIndex(0);
             }}
           />
           <div className="hidden md:flex items-center gap-1">
@@ -131,7 +165,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, comman
         <ul ref={listRef} className="flex-1 overflow-y-auto py-2 scroll-p-2">
             {flatList.length === 0 ? (
                 <div className="px-4 py-8 text-center text-slate-500">
-                    No commands found matching "{query}"
+                    No commands or notes found matching "{query}"
                 </div>
             ) : (
                 sortedGroupKeys.map((group) => {
@@ -190,7 +224,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, comman
         
         <div className="bg-gray-50 dark:bg-slate-950 px-4 py-2 border-t border-gray-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 shrink-0">
              <span>
-                <span className="font-semibold">{flatList.length}</span> commands
+                <span className="font-semibold">{flatList.length}</span> results
              </span>
              <div className="flex gap-4">
                  <span className="flex items-center gap-1"><ArrowRight className="w-3 h-3 rotate-[-90deg]"/> <ArrowRight className="w-3 h-3 rotate-90deg"/> Navigate</span>

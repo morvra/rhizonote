@@ -1339,6 +1339,11 @@ export default function App() {
         isOpen={isCommandPaletteOpen} 
         onClose={() => setIsCommandPaletteOpen(false)} 
         commands={commands} 
+        notes={notes}
+        onSelectNote={(id) => {
+             setHighlightedLine(null); // ハイライトをリセット
+             openNote(id);
+        }}
       />
 
       <Sidebar
@@ -1828,7 +1833,7 @@ export default function App() {
                      <ShortcutRow keys={['Alt', 'R']} description="Open Random Note" />
                      <ShortcutRow keys={['Ctrl', '[']} description="Go Back" />
                      <ShortcutRow keys={['Ctrl', ']']} description="Go Forward" />
-                     <ShortcutRow keys={['Cmd', 'Shift', 'E']} description="Extract Selection" />
+                     <ShortcutRow keys={['Ctrl', 'Shift', 'E']} description="Extract Selection" />
                      <ShortcutRow keys={['[[']} description="Trigger Link Autocomplete" />
                      <ShortcutRow keys={['Ctrl', '[']} description="Wrap Selection in WikiLink" />
                 </div>

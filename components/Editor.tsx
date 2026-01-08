@@ -251,7 +251,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   useEffect(() => {
     const handleWindowKeyDown = (e: KeyboardEvent) => {
         if (!isActive) return;
-        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') {
+        // Fix: Explicitly check that Shift is NOT pressed so it doesn't conflict with Extract Note (Ctrl+Shift+E)
+        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'e') {
             e.preventDefault();
             setMode(prev => prev === 'edit' ? 'preview' : 'edit');
         }
@@ -827,7 +828,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     }
 
     // Keyboard shortcut for extraction: Cmd+Shift+E
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'e') {
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'e') {
         e.preventDefault();
         const start = target.selectionStart;
         const end = target.selectionEnd;
