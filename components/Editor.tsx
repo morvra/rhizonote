@@ -289,6 +289,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   
   // Ref to store cursor position that needs to be restored after a render
   const pendingCursorRef = useRef<number | null>(null);
+
+  // Ref to store pending range selection (start, end) and scroll target
+  const pendingSelectionRef = useRef<{ start: number; end: number; scrollLineIndex?: number } | null>(null);
   
   // Autocomplete state
   const [showPopup, setShowPopup] = useState(false);
@@ -448,15 +451,36 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
   // Restore cursor position immediately after DOM update to prevent jumping
   useLayoutEffect(() => {
-    if (pendingCursorRef.current !== null && textareaRef.current) {
-      textareaRef.current.setSelectionRange(pendingCursorRef.current, pendingCursorRef.current);
-      // Update line tracking based on the restored cursor position
-      const pos = pendingCursorRef.current;
-      prevSelectionRef.current = pos;
-      const line = note.content.substring(0, pos).split('\n').length - 1;
-      setCurrentLineIndex(line);
-      
-      pendingCursorRef.current = null;
+    if (textareaRef.current) {
+        if (pendingSelectionRef.current) {
+            // Restore selection range and scroll if needed
+            const { start, end, scrollLineIndex } = pendingSelectionRef.current;
+            textareaRef.current.setSelectionRange(start, end);
+            
+            // Auto-scroll to keep line in view
+            if (scrollLineIndex !== undefined && backdropRef.current) {
+                const lineEl = backdropRef.current.querySelector(`[data-line="${scrollLineIndex}"]`);
+                if (lineEl) {
+                    lineEl.scrollIntoView({ block: 'nearest' });
+                }
+            }
+            
+            // Update line tracking
+            const line = note.content.substring(0, start).split('\n').length - 1;
+            setCurrentLineIndex(line);
+            prevSelectionRef.current = start;
+
+            pendingSelectionRef.current = null;
+            pendingCursorRef.current = null; // Clear fallback
+        } else if (pendingCursorRef.current !== null) {
+            // Fallback for simple cursor restoration
+            textareaRef.current.setSelectionRange(pendingCursorRef.current, pendingCursorRef.current);
+            const pos = pendingCursorRef.current;
+            prevSelectionRef.current = pos;
+            const line = note.content.substring(0, pos).split('\n').length - 1;
+            setCurrentLineIndex(line);
+            pendingCursorRef.current = null;
+        }
     }
   });
 
@@ -826,52 +850,88 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         return;
     }
     
-    // Line Moving: Ctrl/Cmd + Arrow Up/Down
+    // Line Moving: Ctrl/Cmd + Arrow Up/Down (Modified for Multi-line Support)
     if ((e.metaKey || e.ctrlKey) && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         e.preventDefault();
         const start = target.selectionStart;
+        const end = target.selectionEnd;
         const value = target.value;
         const lines = value.split('\n');
         
-        // Find line index of cursor
-        const textBefore = value.substring(0, start);
-        const currentLineIndex = textBefore.split('\n').length - 1;
+        // Find start and end line indices
+        const startLineIndex = value.substring(0, start).split('\n').length - 1;
+        let endLineIndex = value.substring(0, end).split('\n').length - 1;
+        
+        // Adjustment: if selection ends at the very beginning of a line (after newline),
+        // we generally consider the previous line as the end of selection for block operations,
+        // unless it's a single caret.
+        if (end > start && value[end - 1] === '\n') {
+             // Check if we are at start of line
+             const lineStartPos = value.lastIndexOf('\n', end - 2) + 1;
+             if (end === lineStartPos) {
+                 // Empty line selection? No, end is newline char of prev line.
+             }
+             // For simplicity, if end index is at index 0 of a line, subtract 1 from line index
+             const linesUntilEnd = value.substring(0, end).split('\n');
+             if (linesUntilEnd[linesUntilEnd.length - 1] === '') {
+                 endLineIndex = Math.max(startLineIndex, endLineIndex - 1);
+             }
+        }
 
-        // Calculate offset from start of line
-        const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-        const offset = start - lineStart;
-
-        if (e.key === 'ArrowUp' && currentLineIndex > 0) {
-            // Swap with previous
-            const temp = lines[currentLineIndex];
-            lines[currentLineIndex] = lines[currentLineIndex - 1];
-            lines[currentLineIndex - 1] = temp;
+        if (e.key === 'ArrowUp' && startLineIndex > 0) {
+            // Move block [startLineIndex, endLineIndex] UP
+            // The line above the block is the target to swap with
+            const lineToMoveDown = lines[startLineIndex - 1];
             
-            // Reconstruct content
+            // Extract the block
+            const blockToMove = lines.slice(startLineIndex, endLineIndex + 1);
+            
+            // Remove block from current position
+            lines.splice(startLineIndex, blockToMove.length);
+            // Insert block at new position (one line up)
+            lines.splice(startLineIndex - 1, 0, ...blockToMove);
+            
             const newContent = lines.join('\n');
             onUpdate(note.id, { content: newContent });
             
-            // Calculate new cursor position
-            // The moved line is now at index-1. 
-            // We find the start position of that line in the new text.
-            const prefix = lines.slice(0, currentLineIndex - 1).join('\n');
-            const newStart = prefix.length > 0 ? prefix.length + 1 : 0;
-            // Ensure we don't go out of bounds if offset is somehow larger (shouldn't happen with same content)
-            pendingCursorRef.current = newStart + offset;
+            // Calculate new selection range
+            // The block shifted up by (length of previous line + 1 newline char)
+            const shiftAmount = -(lineToMoveDown.length + 1);
+            
+            pendingSelectionRef.current = {
+                start: start + shiftAmount,
+                end: end + shiftAmount,
+                scrollLineIndex: startLineIndex - 1 // Scroll to new top of block
+            };
         } 
-        else if (e.key === 'ArrowDown' && currentLineIndex < lines.length - 1) {
-             // Swap with next
-             const temp = lines[currentLineIndex];
-             lines[currentLineIndex] = lines[currentLineIndex + 1];
-             lines[currentLineIndex + 1] = temp;
+        else if (e.key === 'ArrowDown' && endLineIndex < lines.length - 1) {
+             // Move block [startLineIndex, endLineIndex] DOWN
+             // The line below the block is the target to swap with
+             const lineToMoveUp = lines[endLineIndex + 1];
+             
+             // We want to effectively move the line *below* to *above* the block
+             // Or move the block *after* the line below.
+             
+             // Extract the block
+             const blockToMove = lines.slice(startLineIndex, endLineIndex + 1);
+             
+             // Remove block
+             lines.splice(startLineIndex, blockToMove.length);
+             // Insert block at new position (start index + 1, because we removed it, so next line shifted up to start index)
+             lines.splice(startLineIndex + 1, 0, ...blockToMove);
              
              const newContent = lines.join('\n');
              onUpdate(note.id, { content: newContent });
              
-             // The moved line is now at index+1.
-             const prefix = lines.slice(0, currentLineIndex + 1).join('\n');
-             const newStart = prefix.length + 1;
-             pendingCursorRef.current = newStart + offset;
+             // Calculate new selection range
+             // The block shifted down by (length of next line + 1 newline char)
+             const shiftAmount = lineToMoveUp.length + 1;
+             
+             pendingSelectionRef.current = {
+                 start: start + shiftAmount,
+                 end: end + shiftAmount,
+                 scrollLineIndex: endLineIndex + 1 // Scroll to new bottom of block
+             };
         }
         return;
     }
