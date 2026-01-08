@@ -583,6 +583,41 @@ export default function App() {
       }));
   };
 
+  const openNote = (id: string) => {
+    setPanes(prev => {
+        const newPanes = [...prev];
+        newPanes[activePaneIndex] = id;
+        return newPanes;
+    });
+    // Update history
+    setHistory(prev => {
+        const newHistory = [...prev];
+        if (!newHistory[activePaneIndex]) {
+            newHistory[activePaneIndex] = { stack: [], currentIndex: -1 };
+        }
+        const paneHist = newHistory[activePaneIndex];
+        // If stack is empty, just push
+        if (paneHist.currentIndex === -1) {
+             newHistory[activePaneIndex] = { stack: [id], currentIndex: 0 };
+        } else {
+            const current = paneHist.stack[paneHist.currentIndex];
+            if (current !== id) {
+                const newStack = paneHist.stack.slice(0, paneHist.currentIndex + 1);
+                newStack.push(id);
+                newHistory[activePaneIndex] = {
+                    stack: newStack,
+                    currentIndex: newStack.length - 1
+                };
+            }
+        }
+        return newHistory;
+    });
+    
+    if (window.innerWidth < 768) {
+        setMobileMenuOpen(false);
+    }
+  };
+
   const handleCreateNote = () => {
     const newNote: Note = {
       id: generateId(),
@@ -673,6 +708,14 @@ export default function App() {
             setInputModal({ isOpen: false, title: '', value: '', onConfirm: () => {} });
         }
     });
+  };
+
+  const handleToggleFolderExpand = (folderId: string) => {
+      setExpandedFolderIds(prev => 
+          prev.includes(folderId) 
+              ? prev.filter(id => id !== folderId) 
+              : [...prev, folderId]
+      );
   };
 
   const handleRenameFolder = (id: string) => {
@@ -847,7 +890,6 @@ export default function App() {
   };
 
   const handleUpdateNote = (id: string, updates: Partial<Note>) => {
-    
     setNotes((prev: Note[]) => {
         const oldNote = prev.find(n => n.id === id);
         if (!oldNote) return prev;
@@ -869,106 +911,90 @@ export default function App() {
              }
         }
 
-        // 未同期変更をマーク
+        // Mark as unsynced
         unsyncedNoteIds.current.add(id);
-        const updatedNote = { ...oldNote, ...updates, updatedAt: Date.now() };
-        return prev.map((n) => (n.id === id ? updatedNote : n));
-    });
-  };
 
-  const handleRefactorLinks = (oldTitle: string, newTitle: string) => {
-    const escapedOldTitle = oldTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`\\[\\[${escapedOldTitle}\\]\\]`, 'g');
-    
-    setNotes((prev: Note[]) => prev.map(note => {
-      if (note.content.match(regex)) {
-        return {
-          ...note,
-          content: note.content.replace(regex, `[[${newTitle}]]`),
-          updatedAt: Date.now()
-        };
-      }
-      return note;
-    }));
+        return prev.map(n => n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n);
+    });
   };
 
   const handleMoveNote = (noteId: string, folderId: string | null) => {
-    setNotes((prev: Note[]) => {
-        const note = prev.find(n => n.id === noteId);
-        if (note && note.folderId !== folderId) {
-            // Queue Rename (Move)
-            const oldPath = getNotePath(note.title, note.folderId, folders);
-            const newPath = getNotePath(note.title, folderId, folders);
-            if (oldPath !== newPath) {
-                queueRename(oldPath, newPath);
-            }
-        }
-        return prev.map(n => n.id === noteId ? { ...n, folderId, updatedAt: Date.now() } : n);
-    });
+      handleUpdateNote(noteId, { folderId });
   };
 
-  const handleMoveFolder = (folderId: string, newParentId: string | null) => {
-      if (newParentId) {
-          if (folderId === newParentId) return;
-          const descendants = getDescendantFolderIds(folderId, folders);
-          if (descendants.includes(newParentId)) {
-              alert("Cannot move a folder into its own subfolder.");
-              return;
+  const handleMoveFolder = (folderId: string, parentId: string | null) => {
+      // Prevent circular moves
+      if (folderId === parentId) return;
+      
+      // Check if parentId is a descendant of folderId
+      const isDescendant = (parent: string | null, target: string): boolean => {
+          if (!parent) return false;
+          if (parent === target) return true;
+          const pFolder = folders.find(f => f.id === parent);
+          return pFolder ? isDescendant(pFolder.parentId, target) : false;
+      };
+
+      if (parentId && isDescendant(parentId, folderId)) {
+          alert("Cannot move a folder into its own descendant.");
+          return;
+      }
+
+      setFolders(prev => {
+          const folder = prev.find(f => f.id === folderId);
+          if (!folder) return prev;
+          
+          const oldPath = getFolderPath(folderId, prev);
+          
+          // Simulate state for new path
+          const tempFolders = prev.map(f => f.id === folderId ? { ...f, parentId } : f);
+          const newPath = getFolderPath(folderId, tempFolders);
+          
+          if (oldPath !== newPath) {
+              queueRename(oldPath, newPath);
           }
-      }
-      
-      // Queue Rename (Move) for Folder
-      const oldPath = getFolderPath(folderId, folders);
-      
-      // Simulate new state
-      const simulatedFolders = folders.map(f => f.id === folderId ? { ...f, parentId: newParentId } : f);
-      const newPath = getFolderPath(folderId, simulatedFolders);
-
-      if (oldPath !== newPath) {
-          queueRename(oldPath, newPath);
-      }
-
-      setFolders((prev: Folder[]) => prev.map(f => f.id === folderId ? { ...f, parentId: newParentId } : f));
+          
+          return prev.map(f => f.id === folderId ? { ...f, parentId } : f);
+      });
   };
 
-  const handleSortChange = (field: SortField) => {
-      if (sortField === field) {
-          setSortDirection((prev: SortDirection) => prev === 'asc' ? 'desc' : 'asc');
+  const handleRefactorLinks = (oldTitle: string, newTitle: string) => {
+      if (oldTitle === newTitle) return;
+      
+      const regex = new RegExp(`\\[\\[${oldTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]\\]`, 'g');
+      const newLink = `[[${newTitle}]]`;
+      
+      setNotes(prev => prev.map(n => {
+          if (n.content.match(regex)) {
+              unsyncedNoteIds.current.add(n.id);
+              return {
+                  ...n,
+                  content: n.content.replace(regex, newLink),
+                  updatedAt: Date.now()
+              };
+          }
+          return n;
+      }));
+  };
+  
+  const handleLinkClick = (title: string) => {
+      const target = notes.find(n => n.title === title && !n.deletedAt);
+      if (target) {
+          openNote(target.id);
       } else {
-          setSortField(field);
-          setSortDirection(field === 'name' ? 'asc' : 'desc');
+          // Create new note with this title and open it
+          const newNote: Note = {
+              id: generateId(),
+              folderId: null,
+              title: title,
+              content: `# ${title}\n`,
+              isBookmarked: false,
+              updatedAt: Date.now(),
+              createdAt: Date.now()
+          };
+          setNotes(prev => [newNote, ...prev]);
+          unsyncedNoteIds.current.add(newNote.id);
+          openNote(newNote.id);
       }
-  };
-
-  const handleToggleFolderExpand = (folderId: string) => {
-      setExpandedFolderIds((prev: string[]) => 
-        prev.includes(folderId) 
-            ? prev.filter(id => id !== folderId) 
-            : [...prev, folderId]
-      );
-  };
-
-  const openNote = (id: string) => {
-    const targetPane = activePaneIndex;
-    const newPanes = [...panes];
-    newPanes[targetPane] = id;
-    setPanes(newPanes);
-    setHistory((prevHistory: PaneHistory[]) => {
-        const newHistory = [...prevHistory];
-        const paneHist = newHistory[targetPane] || { stack: [], currentIndex: -1 };
-        const newStack = paneHist.stack.slice(0, paneHist.currentIndex + 1);
-        if (newStack[newStack.length - 1] !== id) {
-            newStack.push(id);
-        }
-        newHistory[targetPane] = {
-            stack: newStack,
-            currentIndex: newStack.length - 1
-        };
-        return newHistory;
-    });
-    if (window.innerWidth < 768) {
-        setMobileMenuOpen(false);
-    }
   };
 
   const goBack = () => {
@@ -1003,32 +1029,6 @@ export default function App() {
       }
   };
 
-  const handleLinkClick = (title: string) => {
-    const targetNote = notes.find(n => n.title.toLowerCase() === title.toLowerCase() && !n.deletedAt);
-    if (targetNote) {
-      openNote(targetNote.id);
-    } else {
-      setConfirmModal({
-          isOpen: true,
-          message: `Note "${title}" does not exist. Create it?`,
-          onConfirm: () => {
-            const newNote: Note = {
-                id: generateId(),
-                folderId: null,
-                title: title,
-                content: '',
-                isBookmarked: false,
-                updatedAt: Date.now(),
-                createdAt: Date.now(),
-            };
-            setNotes((prev: Note[]) => [newNote, ...prev]);
-            openNote(newNote.id);
-            setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} });
-          }
-      });
-    }
-  };
-
   const toggleSplitView = () => {
     if (panes[1] !== null) {
       setPanes([panes[0], null]);
@@ -1050,7 +1050,6 @@ export default function App() {
   };
 
   const handleTogglePreview = () => {
-     // Dispatch a custom event that Editor components listen to
      window.dispatchEvent(new Event('rhizonote-toggle-preview'));
   };
 
@@ -1098,9 +1097,7 @@ export default function App() {
 
   // Edge Swipe Handler
   const handleTouchStart = (e: React.TouchEvent) => {
-    // Only track if single touch
     if (e.touches.length !== 1) return;
-    
     touchStartRef.current = {
         x: e.touches[0].clientX,
         y: e.touches[0].clientY
@@ -1109,21 +1106,13 @@ export default function App() {
 
   const handleTouchEnd = (e: React.TouchEvent) => {
       if (!touchStartRef.current) return;
-      
       const touchEndX = e.changedTouches[0].clientX;
       const touchEndY = e.changedTouches[0].clientY;
-      
       const deltaX = touchEndX - touchStartRef.current.x;
       const deltaY = Math.abs(touchEndY - touchStartRef.current.y);
-
-      // Conditions for Edge Swipe:
-      // 1. Start near left edge (within 40px)
-      // 2. Swiped Right significantly (> 50px)
-      // 3. Vertical movement is minimal (to distinguish from scroll)
       if (touchStartRef.current.x < 40 && deltaX > 50 && deltaY < 50) {
           setMobileMenuOpen(true);
       }
-      
       touchStartRef.current = null;
   };
 
@@ -1131,8 +1120,10 @@ export default function App() {
 
   useEffect(() => {
     shortcutHandlerRef.current = (e: KeyboardEvent) => {
+        // Respect if default was prevented by child components (e.g. Editor Ctrl+[)
+        if (e.defaultPrevented) return;
+
         const isMod = e.metaKey || e.ctrlKey;
-        
         if ((isMod && e.key === '[') || (e.altKey && e.key === 'ArrowLeft')) {
             e.preventDefault();
             goBack();
@@ -1140,37 +1131,30 @@ export default function App() {
             e.preventDefault();
             goForward();
         }
-
-        if (isMod && e.altKey && e.key.toLowerCase() === 'n') { // Ctrl + Alt + N
+        if (isMod && e.altKey && e.key.toLowerCase() === 'n') {
             e.preventDefault();
             handleCreateNote();
         }
-
         if (isMod && e.key.toLowerCase() === 'd') {
             e.preventDefault();
             handleOpenDailyNote();
         }
-
         if (e.altKey && e.key.toLowerCase() === 'r') {
             e.preventDefault();
             handleOpenRandomNote();
         }
-
         if (isMod && e.key.toLowerCase() === 's') {
             e.preventDefault(); 
             handleSync();
         }
-
         if (isMod && e.key === '\\') {
             e.preventDefault();
             setSidebarVisible((prev: boolean) => !prev);
         }
-
         if (isMod && (e.key === '?' || e.key === '/')) {
             e.preventDefault();
             setShowShortcuts((prev: boolean) => !prev);
         }
-
         if (e.altKey && e.key.toLowerCase() === 't') {
             e.preventDefault();
             setShowTasks((prev: boolean) => {
@@ -1180,8 +1164,6 @@ export default function App() {
                 return true;
             });
         }
-
-        // Command Palette
         if (isMod && e.key.toLowerCase() === 'k') {
             e.preventDefault();
             setIsCommandPaletteOpen(prev => !prev);
@@ -1206,7 +1188,14 @@ export default function App() {
 
   const SortButton = ({ field, icon: Icon, label }: { field: SortField, icon: any, label: string }) => (
      <button
-        onClick={() => handleSortChange(field)}
+        onClick={() => {
+            if (sortField === field) {
+                setSortDirection((prev: SortDirection) => prev === 'asc' ? 'desc' : 'asc');
+            } else {
+                setSortField(field);
+                setSortDirection(field === 'name' ? 'asc' : 'desc');
+            }
+        }}
         className={`flex-1 flex items-center justify-center py-2 rounded-md text-sm font-medium transition-colors ${sortField === field ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 shadow-sm border border-indigo-200 dark:border-indigo-800' : 'bg-gray-100 dark:bg-slate-950 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
         title={`Sort by ${label}`}
      >
@@ -1218,7 +1207,6 @@ export default function App() {
      </button>
   );
 
-  // Generate Commands for Palette
   const commands: CommandItem[] = useMemo(() => {
     const baseCommands: CommandItem[] = [
         { id: 'new-note', label: 'Create New Note', icon: <Plus size={16}/>, action: handleCreateNote, shortcut: 'Ctrl+Alt+N', group: 'Actions' },
@@ -1296,10 +1284,10 @@ export default function App() {
         />
       )}
 
-      {/* ... Rest of the component (Main Content) ... */}
+      {/* Main Content */}
       <div className="flex-1 flex flex-col h-full min-w-0">
         <div className="h-10 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between px-4 bg-gray-50 dark:bg-slate-900 gap-2 shrink-0 transition-colors duration-200">
-            {/* ... Toolbar ... */}
+            {/* Toolbar */}
             <div className="flex items-center gap-2">
                 <button
                     onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -1476,7 +1464,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Mobile Bottom Toolbar (Restored) */}
+      {/* Mobile Bottom Toolbar */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 flex items-center justify-between px-6 pt-3 pb-5">
         <div className="flex items-center gap-6">
             <button
@@ -1532,7 +1520,6 @@ export default function App() {
 
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            {/* ... Settings Modal Content (Unchanged) ... */}
             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowSettings(false)}></div>
             <div className="relative bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto p-6 space-y-6">
                 <div className="flex items-center justify-between border-b border-gray-200 dark:border-slate-800 pb-4">
@@ -1541,7 +1528,7 @@ export default function App() {
                         <X size={20} />
                     </button>
                 </div>
-                {/* ... other settings ... */}
+                
                 <div className="space-y-3">
                     <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-slate-300">
                         <ArrowDownAz size={16} />
@@ -1720,10 +1707,9 @@ export default function App() {
 
       {showShortcuts && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-           {/* ... Shortcuts Modal (Unchanged) ... */}
            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowShortcuts(false)}></div>
-           <div className="relative bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-2xl w-full max-w-md p-6">
-                <div className="flex items-center justify-between border-b border-gray-200 dark:border-slate-800 pb-4 mb-4">
+           <div className="relative bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden">
+                <div className="flex items-center justify-between border-b border-gray-200 dark:border-slate-800 p-4 shrink-0 bg-white dark:bg-slate-900 z-10">
                     <div className="flex items-center gap-2">
                         <Keyboard size={20} className="text-indigo-600 dark:text-indigo-400" />
                         <h2 className="text-xl font-bold text-gray-900 dark:text-slate-100">Keyboard Shortcuts</h2>
@@ -1732,7 +1718,7 @@ export default function App() {
                         <X size={20} />
                     </button>
                 </div>
-                <div className="space-y-3">
+                <div className="flex-1 overflow-y-auto p-6 space-y-3">
                      <ShortcutRow keys={['Ctrl', 'K']} description="Open Command Palette" />
                      <ShortcutRow keys={['Ctrl', 'Alt', 'N']} description="Create New Note" />
                      <ShortcutRow keys={['Ctrl', 'E']} description="Toggle Edit/Preview" />
@@ -1746,6 +1732,7 @@ export default function App() {
                      <ShortcutRow keys={['Ctrl', ']']} description="Go Forward" />
                      <ShortcutRow keys={['Cmd', 'Shift', 'E']} description="Extract Selection" />
                      <ShortcutRow keys={['[[']} description="Trigger Link Autocomplete" />
+                     <ShortcutRow keys={['Ctrl', '[']} description="Wrap Selection in WikiLink" />
                 </div>
            </div>
         </div>
@@ -1753,7 +1740,6 @@ export default function App() {
       
       {showTasks && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-             {/* ... Task List (Unchanged) ... */}
              <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={handleCloseTasks}></div>
              <div className="relative bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
                  <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-800 shrink-0">

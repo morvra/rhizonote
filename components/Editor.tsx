@@ -162,23 +162,26 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     if (!originalTitle || originalTitle === note.title) return 0;
     const escapedTitle = originalTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`\\[\\[${escapedTitle}\\]\\]`);
-    return allNotes.filter(n => n.id !== note.id && n.content.match(regex)).length;
+    return allNotes.filter(n => n.id !== note.id && !n.deletedAt && n.content.match(regex)).length;
   }, [note.title, originalTitle, allNotes, note.id]);
 
   // Calculate Related Notes (Cosense-like)
   const relatedNotes = useMemo(() => {
+      // Filter out deleted notes from calculation
+      const activeAllNotes = allNotes.filter(n => !n.deletedAt);
+
       // 1. Outgoing links (Forward)
       const outgoingLinks = extractLinks(note.content);
       
       // Existing Notes linked from here
-      const existingOutgoing = allNotes.filter(n => outgoingLinks.includes(n.title) && n.id !== note.id);
+      const existingOutgoing = activeAllNotes.filter(n => outgoingLinks.includes(n.title) && n.id !== note.id);
       
       // Ghost Notes (Missing Links) linked from here
-      const missingLinks = outgoingLinks.filter(link => !allNotes.some(n => n.title === link));
+      const missingLinks = outgoingLinks.filter(link => !activeAllNotes.some(n => n.title === link));
       
       const ghostNotes: Note[] = missingLinks.map(link => {
           // Find backlinks to this missing note
-          const linkedFrom = allNotes.filter(n => extractLinks(n.content).includes(link));
+          const linkedFrom = activeAllNotes.filter(n => extractLinks(n.content).includes(link));
           
           return {
               id: `ghost-${link}`,
@@ -194,7 +197,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       });
 
       // 2. Incoming links (Backlinks)
-      const backlinkNotes = allNotes.filter(n => {
+      const backlinkNotes = activeAllNotes.filter(n => {
           if (n.id === note.id) return false;
           const links = extractLinks(n.content);
           return links.includes(note.title);
@@ -570,11 +573,29 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const target = e.currentTarget;
+
+    // Selection Wrapping with Ctrl/Cmd + [
+    if ((e.metaKey || e.ctrlKey) && e.key === '[') {
+        const start = target.selectionStart;
+        const end = target.selectionEnd;
+        if (start !== end) {
+            e.preventDefault();
+            e.stopPropagation(); // Stop App.tsx from triggering Go Back
+            const text = target.value.substring(start, end);
+            const newValue = target.value.substring(0, start) + `[[${text}]]` + target.value.substring(end);
+            onUpdate(note.id, { content: newValue });
+            // Put cursor after the closing bracket
+            pendingCursorRef.current = end + 4; 
+            return;
+        }
+    }
+
     // Keyboard shortcut for extraction: Cmd+Shift+E
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'e') {
         e.preventDefault();
-        const start = e.currentTarget.selectionStart;
-        const end = e.currentTarget.selectionEnd;
+        const start = target.selectionStart;
+        const end = target.selectionEnd;
         if (start !== end) {
             const text = note.content.substring(start, end);
             
@@ -594,8 +615,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         return;
     }
     
-    const target = e.currentTarget;
-
     // Line Moving: Ctrl/Cmd + Arrow Up/Down
     if ((e.metaKey || e.ctrlKey) && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         e.preventDefault();
@@ -763,6 +782,10 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   // Renders the text behind the textarea
   const renderBackdrop = (content: string) => {
       const lines = content.split('\n');
+      
+      // Create a set of existing titles for quick lookup
+      const existingTitles = new Set(allNotes.filter(n => !n.deletedAt).map(n => n.title));
+
       return lines.map((line, index) => {
           const isActive = index === currentLineIndex;
 
@@ -827,11 +850,17 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                  }
                  if (part.startsWith('[[') && part.endsWith(']]')) {
                      const title = part.slice(2, -2);
+                     const exists = existingTitles.has(title);
+                     
                      return (
                          <span 
                             key={i} 
                             className={`
-                                ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-indigo-600 dark:text-indigo-400 underline decoration-indigo-500/50 pointer-events-auto'}
+                                ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 
+                                  exists 
+                                    ? 'text-indigo-600 dark:text-indigo-400 underline decoration-indigo-500/50 pointer-events-auto'
+                                    : 'text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 underline opacity-80 pointer-events-auto'
+                                }
                                 z-10 relative
                             `}
                             data-link-title={title}
@@ -871,6 +900,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   };
 
   const renderMarkdown = (text: string) => {
+    // Create a set of existing titles for quick lookup
+    const existingTitles = new Set(allNotes.filter(n => !n.deletedAt).map(n => n.title));
+
     let html = text
       .replace(/^# (.*$)/gm, '<h1 class="text-3xl font-bold mb-3 text-slate-800 dark:text-slate-100 border-b border-gray-200 dark:border-slate-700 pb-2">$1</h1>')
       .replace(/^## (.*$)/gm, '<h2 class="text-2xl font-bold my-4 text-slate-700 dark:text-slate-200">$1</h2>')
@@ -1011,7 +1043,14 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
     html = html.replace(
       /\[\[(.*?)\]\]/g, 
-      (match, p1) => `<span class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 underline cursor-pointer wiki-link font-medium" data-link="${p1}">${match}</span>`
+      (match, p1) => {
+          const exists = existingTitles.has(p1);
+          const style = exists 
+            ? 'text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 underline font-medium'
+            : 'text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 underline opacity-80';
+          
+          return `<span class="${style} cursor-pointer wiki-link" data-link="${p1}">${match}</span>`;
+      }
     );
     return { __html: html };
   };
