@@ -68,8 +68,11 @@ const WikiLinkPopup: React.FC<WikiLinkPopupProps> = ({ query, notes, onSelect, p
             }`}
             onClick={() => onSelect(note.title)}
           >
-            <span className="w-2 h-2 rounded-full bg-slate-500 opacity-50"></span>
-            {note.title}
+            <span className={`w-2 h-2 rounded-full ${note.isGhost ? 'border border-slate-500' : 'bg-slate-500'} opacity-50`}></span>
+            <span className={note.isGhost ? 'italic text-slate-400' : ''}>
+                {note.title}
+            </span>
+            {note.isGhost && <span className="text-[10px] ml-auto opacity-50 border border-slate-600 px-1 rounded">New</span>}
           </li>
         ))}
       </ul>

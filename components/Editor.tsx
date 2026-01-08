@@ -366,6 +366,37 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       };
   }, [note.content, note.title, allNotes, note.id]);
 
+  const linkCandidates = useMemo(() => {
+    // 1. まずは既存のノートを候補に入れる
+    const candidates = [...allNotes];
+    const existingTitles = new Set(allNotes.map(n => n.title));
+    const seenGhostTitles = new Set<string>();
+
+    // 2. 全ノート(削除済み除く)の本文を走査して、[[リンク]] を抽出する
+    allNotes.forEach(n => {
+        if (n.deletedAt) return;
+
+        const links = extractLinks(n.content);
+        links.forEach(link => {
+            // まだノートが存在せず、かつリストに追加していない場合
+            if (!existingTitles.has(link) && !seenGhostTitles.has(link)) {
+                seenGhostTitles.add(link);
+                // 擬似的なノートオブジェクトを作成して追加
+                candidates.push({
+                    id: `ghost-${link}`,
+                    title: link,
+                    content: '',
+                    folderId: null,
+                    isBookmarked: false,
+                    updatedAt: 0,
+                    createdAt: 0,
+                    isGhost: true // WikiLinkPopup側で区別できるようにフラグを立てる
+                } as Note);
+            }
+        });
+    });
+    return candidates;
+  }, [allNotes]);
 
   useEffect(() => {
       if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
@@ -1124,7 +1155,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 {showPopup && (
                 <WikiLinkPopup
                     query={popupQuery}
-                    notes={allNotes}
+                    notes={linkCandidates}
                     onSelect={insertWikiLink}
                     position={popupPos}
                     onClose={() => setShowPopup(false)}
