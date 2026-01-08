@@ -960,12 +960,13 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         const taskRegex = /^(\s*)([-*]|\d+\.)\s+\[([ x])\]\s(.*)$/;
         const match = line.match(taskRegex);
         if (match) {
-            if (currentTaskCount === taskIndex) {
+            const isTarget = currentTaskCount === taskIndex;
+            currentTaskCount++;
+            if (isTarget) {
                 const isChecked = match[3] === 'x';
                 const newStatus = isChecked ? ' ' : 'x';
                 return `${match[1]}${match[2]} [${newStatus}] ${match[4]}`;
             }
-            currentTaskCount++;
         }
         return line;
     });
