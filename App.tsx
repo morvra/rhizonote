@@ -474,7 +474,7 @@ export default function App() {
       if (!autoSync || (!dropboxToken && !dropboxRefreshToken)) return;
 
       let intervalId: number | undefined;
-      const MIN_SYNC_INTERVAL = 30 * 1000; // 最低30秒間隔（レート制限対策）
+      const MIN_SYNC_INTERVAL = 3 * 60 * 1000; // 最低3分間隔（レート制限対策）
 
       const syncIfNeeded = async () => {
           const now = Date.now();
@@ -491,7 +491,7 @@ export default function App() {
               return;
           }
 
-          // 最後の同期から30秒経っていなければスキップ
+          // 最後の同期から3分経っていなければスキップ
           if (timeSinceLastSync < MIN_SYNC_INTERVAL) {
               return;
           }
