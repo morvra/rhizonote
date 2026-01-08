@@ -594,6 +594,11 @@ export default function App() {
       if (!showTasks) return;
 
       const handleKeyDown = (e: KeyboardEvent) => {
+          if (e.key === 'Escape') {
+              e.preventDefault();
+              handleCloseTasks();
+              return;
+          }
           if (visibleFlatTasks.length === 0) return;
 
           if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) {
@@ -1852,9 +1857,9 @@ export default function App() {
                      </div>
                      <div className="flex items-center gap-3">
                         <div className="hidden sm:flex items-center gap-2 text-[10px] text-slate-400 mr-2">
-                            <span className="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-slate-700">↑↓</span> to navigate
                             <span className="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-slate-700">Space</span> to toggle
                             <span className="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-slate-700">Enter</span> to open
+                            <span className="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-slate-700">Esc</span> to close
                         </div>
                         <button onClick={handleCloseTasks} className="text-gray-500 hover:text-gray-900 dark:text-slate-400 dark:hover:text-white">
                             <X size={20} />
