@@ -109,22 +109,22 @@ const parseInline = (text: string) => {
         .replace(/~~(.*?)~~/g, '<del class="line-through text-slate-400">$1</del>')
 
         // Inline Code (Protected)
-        .replace(/`([^`]+)`/g, (match, code) => {
+        .replace(/`([^`]+)`/g, (_match, code) => {
              return addPlaceholder(`<code class="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-sm font-mono text-indigo-600 dark:text-indigo-400">${code}</code>`);
         })
 
         // Images (Protected)
-        .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, src) => {
+        .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, src) => {
             return addPlaceholder(`<img src="${src}" alt="${alt}" class="max-w-full rounded-lg my-2 border border-gray-200 dark:border-slate-800" />`);
         })
 
         // Links (Protected)
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, txt, href) => {
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, txt, href) => {
             return addPlaceholder(`<a href="${href}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">${txt}</a>`);
         })
 
         // Wiki Links (Protected)
-        .replace(/\[\[(.*?)\]\]/g, (match, title) => {
+        .replace(/\[\[(.*?)\]\]/g, (_match, title) => {
             return addPlaceholder(`<span class="wiki-link text-indigo-600 dark:text-indigo-400 cursor-pointer hover:underline font-medium" data-link="${title}">${title}</span>`);
         })
 
