@@ -1295,11 +1295,27 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       {/* Header */}
       <div className="flex flex-col px-6 py-3 border-b border-gray-200 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-900/50 z-20">
         <div className="flex items-center justify-between">
-            <input
-                type="text"
+            <textarea
                 value={note.title}
-                onChange={(e) => onUpdate(note.id, { title: e.target.value })}
-                className="bg-transparent text-xl font-bold text-slate-800 dark:text-slate-200 focus:outline-none w-full mr-4 placeholder-slate-400 dark:placeholder-slate-600"
+                onChange={(e) => {
+                    onUpdate(note.id, { title: e.target.value });
+                    // 入力に合わせて高さを自動調整
+                    e.target.style.height = 'auto';
+                    e.target.style.height = e.target.scrollHeight + 'px';
+                }}
+                // 初期表示時に高さを合わせる
+                ref={(el) => {
+                    if (el) {
+                        el.style.height = 'auto';
+                        el.style.height = el.scrollHeight + 'px';
+                    }
+                }}
+                rows={1}
+                // Enterキーでの改行を無効化（タイトルなので）
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.preventDefault();
+                }}
+                className="bg-transparent text-xl font-bold text-slate-800 dark:text-slate-200 focus:outline-none w-full mr-4 placeholder-slate-400 dark:placeholder-slate-600 resize-none overflow-hidden"
                 placeholder="Note Title"
             />
             <div className="flex items-center gap-2 bg-gray-200 dark:bg-slate-800 rounded p-1">
@@ -1462,7 +1478,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             </div>
             ) : (
             <div 
-                className="w-full h-full px-8 pt-4 pb-12 prose prose-slate dark:prose-invert max-w-none transition-colors duration-200 flex-1 min-h-[200px]"
+                className="w-full h-full px-8 pt-4 pb-12 prose prose-slate dark:prose-invert max-w-none transition-colors duration-200 flex-1 min-h-[200px] break-words"
                 style={{ fontSize: `${fontSize}px` }}
                 dangerouslySetInnerHTML={renderMarkdown(note.content)}
                 onClick={handlePreviewClick}
