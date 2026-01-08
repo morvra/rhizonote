@@ -894,7 +894,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                                 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 
                                   exists 
                                     ? 'text-indigo-600 dark:text-indigo-400 underline decoration-indigo-500/50 pointer-events-auto'
-                                    : 'text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 underline opacity-80 pointer-events-auto'
+                                    : 'text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 underline opacity-60 pointer-events-auto'
                                 }
                                 z-10 relative
                             `}
@@ -1082,7 +1082,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
           const exists = existingTitles.has(p1);
           const style = exists 
             ? 'text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 underline font-medium'
-            : 'text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 underline opacity-80';
+            : 'text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 underline opacity-60';
           
           return `<span class="${style} cursor-pointer wiki-link" data-link="${p1}">${match}</span>`;
       }
