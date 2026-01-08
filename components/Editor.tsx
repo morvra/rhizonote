@@ -1105,7 +1105,20 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const handlePreviewTaskToggle = (taskIndex: number) => {
     const lines = note.content.split('\n');
     let currentTaskCount = 0;
+    let inCodeBlock = false;
+
     const newLines = lines.map(line => {
+        // Toggle code block state
+        if (line.trim().startsWith('```')) {
+            inCodeBlock = !inCodeBlock;
+            return line;
+        }
+
+        // If in code block, do not process as task
+        if (inCodeBlock) {
+            return line;
+        }
+
         // Regex to identify a task line
         const taskRegex = /^(\s*)([-*]|\d+\.)\s+\[([ x])\]\s(.*)$/;
         const match = line.match(taskRegex);
