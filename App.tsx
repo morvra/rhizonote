@@ -810,6 +810,7 @@ export default function App() {
         message: `Move note "${title}" to trash?`,
         onConfirm: () => {
             const now = Date.now();
+            unsyncedNoteIds.current.add(id);
             setNotes(prev => prev.map(n => n.id === id ? { ...n, deletedAt: now, updatedAt: now } : n));
             setPanes(prev => prev.map(paneId => paneId === id ? null : paneId));
             setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} });
@@ -868,6 +869,7 @@ export default function App() {
     setNotes((prev: Note[]) => {
         const note = prev.find(n => n.id === id);
         if (!note) return prev;
+        unsyncedNoteIds.current.add(id);
         if (note.isBookmarked) {
             return prev.map(n => n.id === id ? { ...n, isBookmarked: false, bookmarkOrder: undefined } : n);
         } else {
