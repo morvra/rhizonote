@@ -870,13 +870,21 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         // Check for Task
         const taskMatch = currentLine.match(/^(\s*)-\s\[([ x])\]\s(.*)$/);
         if (taskMatch) {
-            // Task -> Normal Text
-            // Remove "- [ ] " (6 chars)
-            newLine = taskMatch[1] + taskMatch[3];
-            if (start >= lineStart + taskMatch[1].length + 6) {
-                newPos = start - 6;
-            } else if (start > lineStart + taskMatch[1].length) {
-                newPos = lineStart + taskMatch[1].length;
+            const indent = taskMatch[1];
+            const isChecked = taskMatch[2] === 'x';
+            const content = taskMatch[3];
+
+            if (!isChecked) {
+                // Task -> Checked Task
+                newLine = `${indent}- [x] ${content}`;
+            } else {
+                // Checked Task -> Normal Text
+                newLine = `${indent}${content}`;
+                if (start >= lineStart + indent.length + 6) {
+                    newPos = start - 6;
+                } else if (start > lineStart + indent.length) {
+                    newPos = lineStart + indent.length;
+                }
             }
         } else {
             // Check for List
