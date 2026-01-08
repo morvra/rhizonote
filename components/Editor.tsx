@@ -422,6 +422,14 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
           // Reset internal tracking
           prevSelectionRef.current = 0;
           setCurrentLineIndex(-1); // Changed from 0 to -1 to avoid activating first line by default
+
+          // Force focus when note changes (e.g. from Command Palette or Sidebar)
+          // We use a timeout to win against CommandPalette closing focus restoration
+          if (isActive && mode === 'edit') {
+             setTimeout(() => {
+                 textareaRef.current?.focus();
+             }, 10);
+          }
       }
       if (backdropRef.current) {
           // Also reset backdrop scroll if it was scrollable (though it usually mirrors textarea)
