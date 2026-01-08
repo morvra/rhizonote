@@ -166,6 +166,13 @@ export default function App() {
   const lastEditTimeRef = useRef<number>(0);
 
   const [recentlyCompletedTasks, setRecentlyCompletedTasks] = useState<Set<string>>(new Set());
+  
+  // Task Selection for Keyboard Navigation
+  const [taskSelectedIndex, setTaskSelectedIndex] = useState(0);
+  const taskListRef = useRef<HTMLDivElement>(null);
+  
+  // Highlighted line for jump-to-task
+  const [highlightedLine, setHighlightedLine] = useState<{ noteId: string; lineIndex: number } | null>(null);
 
   const dailyPrefs = useMemo(() => {
       try {
@@ -562,6 +569,69 @@ export default function App() {
       });
       return result;
   }, [notes]);
+
+  // Flattened list for keyboard navigation
+  const visibleFlatTasks = useMemo(() => {
+      const flat: { note: Note; task: ExtractedTask }[] = [];
+      allTasks.forEach(noteGroup => {
+          const visible = noteGroup.tasks.filter(t => !t.isChecked || recentlyCompletedTasks.has(`${noteGroup.note.id}-${t.lineIndex}`));
+          visible.forEach(task => {
+              flat.push({ note: noteGroup.note, task });
+          });
+      });
+      return flat;
+  }, [allTasks, recentlyCompletedTasks]);
+
+  // Reset selection when modal opens
+  useEffect(() => {
+      if (showTasks) {
+          setTaskSelectedIndex(0);
+      }
+  }, [showTasks]);
+
+  // Keyboard navigation for tasks
+  useEffect(() => {
+      if (!showTasks) return;
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+          if (visibleFlatTasks.length === 0) return;
+
+          if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) {
+              e.preventDefault();
+              setTaskSelectedIndex(prev => (prev + 1) % visibleFlatTasks.length);
+          } else if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p')) {
+              e.preventDefault();
+              setTaskSelectedIndex(prev => (prev - 1 + visibleFlatTasks.length) % visibleFlatTasks.length);
+          } else if (e.key === ' ' && !e.repeat) {
+              e.preventDefault();
+              // Toggle selection
+              const selected = visibleFlatTasks[taskSelectedIndex];
+              if (selected) {
+                  handleToggleTaskFromModal(selected.note.id, selected.task.lineIndex, selected.task.isChecked);
+              }
+          } else if (e.key === 'Enter') {
+              e.preventDefault();
+              const selected = visibleFlatTasks[taskSelectedIndex];
+              if (selected) {
+                  setHighlightedLine({ noteId: selected.note.id, lineIndex: selected.task.lineIndex });
+                  openNote(selected.note.id);
+                  handleCloseTasks();
+              }
+          }
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showTasks, visibleFlatTasks, taskSelectedIndex]);
+
+  // Auto-scroll to selected task
+  useEffect(() => {
+      if (!showTasks || !taskListRef.current) return;
+      const selectedEl = taskListRef.current.querySelector('[data-selected="true"]');
+      if (selectedEl) {
+          selectedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+  }, [taskSelectedIndex, showTasks]);
 
   const handleCloseTasks = () => {
       setShowTasks(false);
@@ -1273,7 +1343,10 @@ export default function App() {
         notes={notes}
         folders={folders}
         activeNoteId={activeNoteId}
-        onSelectNote={openNote}
+        onSelectNote={(id) => {
+            setHighlightedLine(null);
+            openNote(id);
+        }}
         onCreateNote={handleCreateNote}
         onCreateFolder={handleCreateFolder}
         onDeleteNote={handleDeleteNote}
@@ -1441,6 +1514,7 @@ export default function App() {
                     onCreateNoteWithContent={handleCreateSpecificNote}
                     fontSize={fontSize}
                     isActive={activePaneIndex === 0}
+                    highlightedLine={highlightedLine}
                 />
               </div>
             ) : (
@@ -1472,6 +1546,7 @@ export default function App() {
                             onCreateNoteWithContent={handleCreateSpecificNote}
                             fontSize={fontSize}
                             isActive={activePaneIndex === 1}
+                            highlightedLine={highlightedLine}
                         />
                     </div>
                 ) : (
@@ -1765,11 +1840,18 @@ export default function App() {
                          <CheckSquare size={20} className="text-indigo-600 dark:text-indigo-400" />
                          <h2 className="text-xl font-bold text-gray-900 dark:text-slate-100">All Tasks</h2>
                      </div>
-                     <button onClick={handleCloseTasks} className="text-gray-500 hover:text-gray-900 dark:text-slate-400 dark:hover:text-white">
-                         <X size={20} />
-                     </button>
+                     <div className="flex items-center gap-3">
+                        <div className="hidden sm:flex items-center gap-2 text-[10px] text-slate-400 mr-2">
+                            <span className="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-slate-700">↑↓</span> to navigate
+                            <span className="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-slate-700">Space</span> to toggle
+                            <span className="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-slate-700">Enter</span> to open
+                        </div>
+                        <button onClick={handleCloseTasks} className="text-gray-500 hover:text-gray-900 dark:text-slate-400 dark:hover:text-white">
+                            <X size={20} />
+                        </button>
+                     </div>
                  </div>
-                 <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                 <div className="flex-1 overflow-y-auto p-4 space-y-6" ref={taskListRef}>
                      {(() => {
                          const visibleNoteTasks = allTasks.map(nt => ({
                              note: nt.note,
@@ -1785,11 +1867,14 @@ export default function App() {
                              );
                          }
 
+                         let globalTaskIndex = 0;
+
                          return visibleNoteTasks.map(({ note, tasks }) => (
                              <div key={note.id} className="space-y-2">
                                  <div 
                                     className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
                                     onClick={() => {
+                                        setHighlightedLine(null);
                                         openNote(note.id);
                                         handleCloseTasks();
                                     }}
@@ -1799,24 +1884,50 @@ export default function App() {
                                  </div>
                                  <div className="pl-4 space-y-1">
                                      {tasks.map((task) => {
+                                         const isSelected = globalTaskIndex === taskSelectedIndex;
+                                         globalTaskIndex++; // Increment for next task
+
                                          return (
-                                             <div key={`${note.id}-${task.lineIndex}`} className={`flex items-start gap-3 group ${task.isChecked ? 'opacity-40 hover:opacity-100 transition-opacity' : ''}`}>
+                                             <div 
+                                                key={`${note.id}-${task.lineIndex}`} 
+                                                className={`flex items-start gap-3 p-2 rounded-md group transition-all duration-200
+                                                    ${isSelected 
+                                                        ? 'bg-indigo-50 dark:bg-indigo-900/20 shadow-sm border-l-4 border-indigo-500' 
+                                                        : 'border-l-4 border-transparent hover:bg-gray-50 dark:hover:bg-slate-800/50'
+                                                    }
+                                                    ${task.isChecked ? 'opacity-50' : ''}
+                                                `}
+                                                data-selected={isSelected}
+                                                onClick={() => setTaskSelectedIndex(globalTaskIndex - 1)} // Allow click selection
+                                             >
                                                  <input 
                                                     type="checkbox" 
                                                     checked={task.isChecked} 
                                                     onChange={() => handleToggleTaskFromModal(note.id, task.lineIndex, task.isChecked)}
                                                     className="mt-1 rounded border-gray-400 dark:border-slate-600 bg-transparent transform scale-110 cursor-pointer"
                                                  />
-                                                 <span 
-                                                    className={`text-sm text-slate-700 dark:text-slate-300 ${task.isChecked ? 'line-through' : ''}`}
-                                                    dangerouslySetInnerHTML={{ 
-                                                        __html: task.content
-                                                            .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
-                                                            .replace(/\*(.*?)\*/g, '<i>$1</i>')
-                                                            .replace(/`([^`]+)`/g, '<code class="bg-gray-100 dark:bg-slate-800 px-1 rounded text-xs">$1</code>')
-                                                            .replace(/\[\[(.*?)\]\]/g, '<span class="text-indigo-600 dark:text-indigo-400 underline">$1</span>')
+                                                 <div 
+                                                    className="flex-1 cursor-pointer"
+                                                    onClick={() => {
+                                                        setHighlightedLine({ noteId: note.id, lineIndex: task.lineIndex });
+                                                        openNote(note.id);
+                                                        handleCloseTasks();
                                                     }}
-                                                 />
+                                                 >
+                                                     <span 
+                                                        className={`text-sm text-slate-700 dark:text-slate-300 ${task.isChecked ? 'line-through' : ''}`}
+                                                        dangerouslySetInnerHTML={{ 
+                                                            __html: task.content
+                                                                .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+                                                                .replace(/\*(.*?)\*/g, '<i>$1</i>')
+                                                                .replace(/`([^`]+)`/g, '<code class="bg-gray-100 dark:bg-slate-800 px-1 rounded text-xs">$1</code>')
+                                                                .replace(/\[\[(.*?)\]\]/g, '<span class="text-indigo-600 dark:text-indigo-400 underline">$1</span>')
+                                                        }}
+                                                     />
+                                                 </div>
+                                                 <div className={`hidden sm:block text-[10px] text-slate-400 font-mono self-center transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0'}`}>
+                                                     ↩
+                                                 </div>
                                              </div>
                                          );
                                      })}

@@ -12,6 +12,7 @@ interface EditorProps {
   onCreateNoteWithContent?: (title: string, content: string) => void;
   fontSize: number;
   isActive?: boolean;
+  highlightedLine?: { noteId: string; lineIndex: number } | null;
 }
 
 // Helper to extract [[links]] from content, ignoring code blocks
@@ -88,7 +89,7 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, onLinkClick, currentNoteTitle
     );
 };
 
-const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, onRefactorLinks, onCreateNoteWithContent, fontSize, isActive = true }) => {
+const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, onRefactorLinks, onCreateNoteWithContent, fontSize, isActive = true, highlightedLine }) => {
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -157,6 +158,40 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       prevNoteIdRef.current = note.id;
       setOriginalTitle(note.title);
   }
+
+  // Handle Jump to Line (e.g. from Task List)
+  const lastHighlightRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (highlightedLine && highlightedLine !== lastHighlightRef.current && highlightedLine.noteId === note.id) {
+        lastHighlightRef.current = highlightedLine;
+        
+        // Use a small timeout to ensure DOM is ready after mode switch or render
+        setTimeout(() => {
+             if (backdropRef.current) {
+                const lineEl = backdropRef.current.querySelector(`[data-line="${highlightedLine.lineIndex}"]`);
+                if (lineEl) {
+                    lineEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                    
+                    // Set cursor
+                    if (textareaRef.current) {
+                        const lines = note.content.split('\n');
+                        let charIndex = 0;
+                        for(let i=0; i<highlightedLine.lineIndex; i++) {
+                            charIndex += (lines[i]?.length || 0) + 1; // +1 for newline
+                        }
+                        textareaRef.current.focus();
+                        textareaRef.current.setSelectionRange(charIndex, charIndex);
+                        
+                        // Update tracking
+                        setCurrentLineIndex(highlightedLine.lineIndex);
+                    }
+                }
+             }
+        }, 50);
+    }
+  }, [highlightedLine, note.id, note.content]);
+
 
   const linkedNotesCount = useMemo(() => {
     if (!originalTitle || originalTitle === note.title) return 0;
@@ -892,7 +927,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
           }
 
           return (
-            <div key={index} className="whitespace-pre-wrap break-words">
+            <div key={index} className="whitespace-pre-wrap break-words" data-line={index}>
                 {contentNode}
             </div>
           );
