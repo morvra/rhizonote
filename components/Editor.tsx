@@ -583,13 +583,11 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         let top = 0;
         let left = 0;
 
-        // Skip heavy measurement on mobile; we use fixed positioning
-        if (!isMobile) {
-            const coords = measureSelection(start, end);
-            if (coords) {
-                top = coords.top;
-                left = coords.left;
-            }
+        // Perform measurement on both mobile and desktop
+        const coords = measureSelection(start, end);
+        if (coords) {
+            top = coords.top;
+            left = coords.left;
         }
         
         setSelectionMenu({
@@ -1205,13 +1203,13 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                         className={`
                             z-50 flex items-center bg-slate-900 dark:bg-slate-200 shadow-xl border border-slate-700 dark:border-slate-300 gap-0.5 animate-in fade-in duration-100
                             ${isMobile 
-                                // Mobile: Fixed at TOP, avoiding keyboard and bottom toolbar
-                                ? 'fixed left-1/2 -translate-x-1/2 top-28 rounded-full px-5 py-2.5 shadow-2xl border-opacity-50 dark:border-opacity-50 gap-4' 
-                                // Desktop: Absolute positioning near text
+                                // Mobile: Absolute positioning relative to text, but below (mt-8) to avoid iOS selection menu (which is above)
+                                ? 'absolute rounded-full px-3 py-2 shadow-2xl -translate-x-1/2 mt-8' 
+                                // Desktop: Absolute positioning above text
                                 : 'absolute rounded-md p-1 -translate-x-1/2 -translate-y-full mt-[-10px] zoom-in-95'
                             }
                         `}
-                        style={!isMobile ? { top: selectionMenu.top, left: selectionMenu.left } : {}}
+                        style={{ top: selectionMenu.top, left: selectionMenu.left }} 
                         onMouseDown={(e) => e.preventDefault()} // Prevent blur
                     >
                         {/* 1. Less than 1 line (No newlines) */}
