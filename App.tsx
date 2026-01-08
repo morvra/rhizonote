@@ -161,6 +161,9 @@ export default function App() {
 
   // 未同期の変更を追跡
   const unsyncedNoteIds = useRef<Set<string>>(new Set());
+  
+  // 最終編集時刻を追跡（自動同期の抑制に使用）
+  const lastEditTimeRef = useRef<number>(0);
 
   const [recentlyCompletedTasks, setRecentlyCompletedTasks] = useState<Set<string>>(new Set());
 
@@ -469,9 +472,15 @@ export default function App() {
       const syncIfNeeded = async () => {
           const now = Date.now();
           const timeSinceLastSync = now - lastSyncTimeRef.current;
+          const timeSinceLastEdit = now - lastEditTimeRef.current;
 
           // 既に同期中なら何もしない
           if (isSyncingRef.current) {
+              return;
+          }
+
+          // 執筆中（最後の編集から5秒以内）は自動同期しない
+          if (timeSinceLastEdit < 5000) {
               return;
           }
 
@@ -560,6 +569,7 @@ export default function App() {
   };
 
   const handleToggleTaskFromModal = (noteId: string, lineIndex: number, currentChecked: boolean) => {
+      lastEditTimeRef.current = Date.now();
       if (!currentChecked) {
           setRecentlyCompletedTasks((prev: Set<string>) => {
               const newSet = new Set(prev);
@@ -619,6 +629,7 @@ export default function App() {
   };
 
   const handleCreateNote = () => {
+    lastEditTimeRef.current = Date.now();
     const newNote: Note = {
       id: generateId(),
       folderId: null, 
@@ -638,6 +649,7 @@ export default function App() {
   };
 
   const handleCreateSpecificNote = (title: string, content: string) => {
+    lastEditTimeRef.current = Date.now();
     const newNote: Note = {
         id: generateId(),
         folderId: null,
@@ -661,6 +673,7 @@ export default function App() {
     if (existingNote) {
         openNote(existingNote.id);
     } else {
+        lastEditTimeRef.current = Date.now();
         const content = processTemplate(dailyNoteTemplate, todayTitle);
         const newNote: Note = {
             id: generateId(),
@@ -890,6 +903,7 @@ export default function App() {
   };
 
   const handleUpdateNote = (id: string, updates: Partial<Note>) => {
+    lastEditTimeRef.current = Date.now();
     setNotes((prev: Note[]) => {
         const oldNote = prev.find(n => n.id === id);
         if (!oldNote) return prev;
@@ -960,6 +974,7 @@ export default function App() {
   const handleRefactorLinks = (oldTitle: string, newTitle: string) => {
       if (oldTitle === newTitle) return;
       
+      lastEditTimeRef.current = Date.now();
       const regex = new RegExp(`\\[\\[${oldTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]\\]`, 'g');
       const newLink = `[[${newTitle}]]`;
       
@@ -982,6 +997,7 @@ export default function App() {
           openNote(target.id);
       } else {
           // Create new note with this title and open it
+          lastEditTimeRef.current = Date.now();
           const newNote: Note = {
               id: generateId(),
               folderId: null,
