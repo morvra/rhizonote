@@ -308,6 +308,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     text: string;
     start: number;
     end: number;
+    showBelow?: boolean;
   } | null>(null);
 
   // Rename & Refactor State
@@ -649,9 +650,13 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
         // Perform measurement on both mobile and desktop
         const coords = measureSelection(start, end);
+        let showBelow = false; 
         if (coords) {
             top = coords.top;
             left = coords.left;
+            if (top < 50) {
+                showBelow = true;
+            }
         }
         
         setSelectionMenu({
@@ -659,7 +664,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             left,
             text,
             start,
-            end
+            end,
+            showBelow
         });
     } else {
         setSelectionMenu(null);
@@ -1399,8 +1405,11 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                             ${isMobile 
                                 // Mobile: Absolute positioning relative to text, but below (mt-8) to avoid iOS selection menu (which is above)
                                 ? 'absolute rounded-full px-3 py-2 shadow-2xl -translate-x-1/2 mt-8' 
-                                // Desktop: Absolute positioning above text
-                                : 'absolute rounded-md p-1 -translate-x-1/2 -translate-y-full mt-[-10px] zoom-in-95'
+                                : selectionMenu.showBelow
+                                    // 1行目用（下側に表示）
+                                    ? 'absolute rounded-md p-1 -translate-x-1/2 mt-8 zoom-in-95'
+                                    // 通常（上側に表示）
+                                    : 'absolute rounded-md p-1 -translate-x-1/2 -translate-y-full mt-[-10px] zoom-in-95'
                             }
                         `}
                         style={{ top: selectionMenu.top, left: selectionMenu.left }} 
@@ -1461,7 +1470,15 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                         
                         {/* Tail (Desktop Only) */}
                         {!isMobile && (
-                            <div className="absolute left-1/2 bottom-0 w-2 h-2 bg-slate-900 dark:bg-slate-200 translate-y-1/2 -translate-x-1/2 rotate-45 border-r border-b border-slate-700 dark:border-slate-300"></div>
+                            <div className={`
+                                absolute left-1/2 w-2 h-2 bg-slate-900 dark:bg-slate-200 -translate-x-1/2 rotate-45
+                                ${selectionMenu.showBelow
+                                    // 下表示用 (上辺に配置、左・上のボーダー)
+                                    ? 'top-0 -translate-y-1/2 border-l border-t border-slate-700 dark:border-slate-300'
+                                    // 通常 (底辺に配置、右・下のボーダー)
+                                    : 'bottom-0 translate-y-1/2 border-r border-b border-slate-700 dark:border-slate-300'
+                                }
+                            `}></div>
                         )}
                     </div>
                 )}
