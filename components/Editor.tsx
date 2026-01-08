@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Note } from '../types';
 import WikiLinkPopup from './WikiLinkPopup';
-import { Edit3, Eye, RefreshCw, Bold, Italic, Strikethrough, Code, Link as LinkIcon, FilePlus } from 'lucide-react';
+import { Edit3, Eye, RefreshCw, Bold, Italic, Strikethrough, Code, Link as LinkIcon, FilePlus, Link2 } from 'lucide-react';
 
 interface EditorProps {
   note: Note;
@@ -17,15 +17,10 @@ interface EditorProps {
 
 // Helper to extract [[links]] from content, ignoring code blocks
 const extractLinks = (content: string): string[] => {
-    // Regex explanation:
-    // 1. (?:```[\s\S]*?```) matches code blocks (non-capturing group)
-    // 2. (?:`[^`]*`) matches inline code (non-capturing group)
-    // 3. \[\[(.*?)\]\] matches wiki links and captures the content
     const regex = /(?:```[\s\S]*?```|`[^`]*`)|\[\[(.*?)\]\]/g;
     const links: string[] = [];
     let match;
     while ((match = regex.exec(content)) !== null) {
-        // If match[1] exists, it's a link. If undefined, it was a code block that matched.
         if (match[1]) {
             links.push(match[1]);
         }
@@ -40,48 +35,24 @@ interface NoteCardProps {
 }
 
 const NoteCard: React.FC<NoteCardProps> = ({ note, onLinkClick, currentNoteTitle }) => {
-    // For Ghost notes, we might want to show all backlinks even if it includes the current note, 
-    // to clearly show "Referenced by X, Y, Z". 
-    // However, the standard behavior is to exclude current. 
-    // Let's keep excluding current to avoid redundancy, but rely on the text description for the full context if needed.
-    // Actually, for Ghost notes, the "content" is generated specifically to list references.
-    const linksInNote = useMemo(() => extractLinks(note.content).filter(l => l !== currentNoteTitle), [note.content, currentNoteTitle]);
-
     return (
         <div 
             className={`
-                bg-white dark:bg-slate-900 border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer flex flex-col min-h-40
+                bg-white dark:bg-slate-900 border rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer flex flex-col min-h-24
                 ${note.isGhost 
                     ? 'border-dashed border-slate-300 dark:border-slate-700 opacity-90' 
                     : 'border-gray-200 dark:border-slate-800'}
             `}
             onClick={() => onLinkClick(note.title)}
         >
-            <h3 className={`font-bold mb-2 truncate ${note.isGhost ? 'text-slate-600 dark:text-slate-400 italic' : 'text-slate-800 dark:text-slate-200'}`}>
+            <h3 className={`font-bold mb-1.5 truncate text-sm ${note.isGhost ? 'text-slate-600 dark:text-slate-400 italic' : 'text-slate-800 dark:text-slate-200'}`}>
                 {note.title}
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-3 mb-auto whitespace-pre-wrap">
+            <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-3 mb-auto whitespace-pre-wrap leading-relaxed">
                 {note.content.replace(/#/g, '').replace(/\[\[/g, '').replace(/\]\]/g, '')}
             </p>
-            {/* Show links/tags for both normal and ghost notes if available */}
-            {linksInNote.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1 shrink-0">
-                    {linksInNote.map((link, i) => (
-                        <button 
-                            key={i} 
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onLinkClick(link);
-                            }}
-                            className="text-[10px] bg-gray-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-900 text-indigo-500 px-1.5 py-0.5 rounded truncate max-w-[150px] transition-colors"
-                        >
-                            {link}
-                        </button>
-                    ))}
-                </div>
-            )}
-            {note.isGhost && linksInNote.length === 0 && (
-                <div className="mt-3 text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
+            {note.isGhost && (
+                <div className="mt-2 text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
                     Missing Note
                 </div>
             )}
@@ -91,7 +62,6 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, onLinkClick, currentNoteTitle
 
 // Simple Markdown Parser for Preview Mode
 const parseInline = (text: string) => {
-    // We use a placeholder system to prevent nested replacements breaking HTML attributes
     const placeholders: string[] = [];
     const addPlaceholder = (content: string) => {
         placeholders.push(content);
@@ -99,40 +69,24 @@ const parseInline = (text: string) => {
     };
 
     let processed = text
-        // Escape HTML characters
         .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-        
-        // Formatting (Bold, Italic, Strikethrough)
-        // Note: we do this before links so bold text can be inside a link
         .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>')
         .replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
         .replace(/~~(.*?)~~/g, '<del class="line-through text-slate-400">$1</del>')
-
-        // Inline Code (Protected)
         .replace(/`([^`]+)`/g, (_match, code) => {
              return addPlaceholder(`<code class="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-sm font-mono text-indigo-600 dark:text-indigo-400">${code}</code>`);
         })
-
-        // Images (Protected)
         .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, src) => {
             return addPlaceholder(`<img src="${src}" alt="${alt}" class="max-w-full rounded-lg my-2 border border-gray-200 dark:border-slate-800" />`);
         })
-
-        // Links (Protected)
         .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, txt, href) => {
             return addPlaceholder(`<a href="${href}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">${txt}</a>`);
         })
-
-        // Wiki Links (Protected)
         .replace(/\[\[(.*?)\]\]/g, (_match, title) => {
             return addPlaceholder(`<span class="wiki-link text-indigo-600 dark:text-indigo-400 cursor-pointer hover:underline font-medium" data-link="${title}">${title}</span>`);
         })
-
-        // Raw URLs (Processed last, on remaining text)
-        // Matches http/https not preceded by specific chars is tricky, but placeholders handles the "already linked" ones.
         .replace(/(https?:\/\/[^\s)]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">$1</a>');
 
-    // Restore placeholders
     placeholders.forEach((content, i) => {
         processed = processed.replace(`__PH_${i}__`, content);
     });
@@ -150,7 +104,6 @@ const renderMarkdown = (content: string) => {
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         
-        // Code Block Toggle
         if (line.trim().startsWith('```')) {
             inCodeBlock = !inCodeBlock;
             html += inCodeBlock 
@@ -164,7 +117,6 @@ const renderMarkdown = (content: string) => {
             continue;
         }
 
-        // Headers
         if (line.startsWith('# ')) {
             html += `<h1 class="text-3xl font-bold mb-4 mt-2 text-slate-900 dark:text-white">${parseInline(line.slice(2))}</h1>`;
             continue;
@@ -178,20 +130,17 @@ const renderMarkdown = (content: string) => {
             continue;
         }
         
-        // Blockquote
         if (line.startsWith('> ')) {
             html += `<blockquote class="border-l-4 border-gray-300 dark:border-slate-700 pl-4 italic my-4 text-slate-600 dark:text-slate-400">${parseInline(line.slice(2))}</blockquote>`;
             continue;
         }
 
-        // Task List (Updated to respect indentation)
         const taskMatch = line.match(/^(\s*)([-*]|\d+\.)\s+\[([ x])\]\s(.*)$/);
         if (taskMatch) {
             const indentSpace = taskMatch[1].length;
             const isChecked = taskMatch[3] === 'x';
             const text = taskMatch[4];
             const currentTaskIndex = taskIndex++;
-            // Calculate margin: roughly 12px per space char
             const marginLeft = indentSpace * 12;
 
             html += `<div class="flex items-start gap-2 my-1" style="margin-left: ${marginLeft}px">
@@ -201,17 +150,14 @@ const renderMarkdown = (content: string) => {
             continue;
         }
 
-        // Unordered List (Updated to respect indentation)
         const ulMatch = line.match(/^(\s*)-\s(.*)$/);
         if (ulMatch) {
              const indentSpace = ulMatch[1].length;
-             // Base indentation of 20px plus dynamic
              const marginLeft = 20 + (indentSpace * 12);
              html += `<li class="list-disc text-slate-700 dark:text-slate-300" style="margin-left: ${marginLeft}px">${parseInline(ulMatch[2])}</li>`;
              continue;
         }
         
-        // Ordered List (Updated to respect indentation)
         const olMatch = line.match(/^(\s*)\d+\.\s(.*)$/);
         if (olMatch) {
              const indentSpace = olMatch[1].length;
@@ -220,19 +166,16 @@ const renderMarkdown = (content: string) => {
              continue;
         }
 
-        // Horizontal Rule
         if (line.trim() === '---' || line.trim() === '***') {
             html += '<hr class="my-6 border-gray-200 dark:border-slate-800" />';
             continue;
         }
 
-        // Empty line
         if (line.trim() === '') {
             html += '<br>';
             continue;
         }
 
-        // Regular paragraph
         html += `<p class="mb-2 text-slate-700 dark:text-slate-300 leading-relaxed">${parseInline(line)}</p>`;
     }
 
@@ -248,34 +191,25 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const [isMobile, setIsMobile] = useState(false);
   const [isComposing, setIsComposing] = useState(false);
 
-  // Toggle Mode Shortcut (Ctrl+E / Cmd+E) and Custom Event Listener
   useEffect(() => {
     const handleWindowKeyDown = (e: KeyboardEvent) => {
         if (!isActive) return;
-        // Fix: Explicitly check that Shift is NOT pressed so it doesn't conflict with Extract Note (Ctrl+Shift+E)
         if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'e') {
             e.preventDefault();
             setMode(prev => prev === 'edit' ? 'preview' : 'edit');
         }
     };
-    
-    // Custom event listener for Command Palette
     const handleCustomToggle = () => {
-        if (isActive) {
-            setMode(prev => prev === 'edit' ? 'preview' : 'edit');
-        }
+        if (isActive) setMode(prev => prev === 'edit' ? 'preview' : 'edit');
     };
-
     window.addEventListener('keydown', handleWindowKeyDown);
     window.addEventListener('rhizonote-toggle-preview', handleCustomToggle);
-
     return () => {
         window.removeEventListener('keydown', handleWindowKeyDown);
         window.removeEventListener('rhizonote-toggle-preview', handleCustomToggle);
     };
   }, [isActive]);
 
-  // Mobile Detection
   useEffect(() => {
       const checkMobile = () => setIsMobile(window.innerWidth < 768);
       checkMobile();
@@ -283,25 +217,15 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Track where the cursor *was* before the current interaction
   const prevSelectionRef = useRef<number>(0);
-
-  // Track current cursor line to styling
   const [currentLineIndex, setCurrentLineIndex] = useState<number>(-1);
-  
-  // Ref to store cursor position that needs to be restored after a render
   const pendingCursorRef = useRef<number | null>(null);
-
-  // Ref to store pending range selection (start, end) and scroll target
   const pendingSelectionRef = useRef<{ start: number; end: number; scrollLineIndex?: number } | null>(null);
-  
-  // Autocomplete state
   const [showPopup, setShowPopup] = useState(false);
   const [popupQuery, setPopupQuery] = useState('');
   const [popupPos, setPopupPos] = useState<{ top?: number; bottom?: number; left: number }>({ top: 0, left: 0 });
   const [cursorIndex, setCursorIndex] = useState(0);
 
-  // Selection Menu State
   const [selectionMenu, setSelectionMenu] = useState<{
     top: number;
     left: number;
@@ -311,44 +235,32 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     showBelow?: boolean;
   } | null>(null);
 
-  // Rename & Refactor State
   const [originalTitle, setOriginalTitle] = useState(note.title);
-
-  // Flag to track link clicks to ignore subsequent mouseUp events
   const isLinkClickRef = useRef(false);
-
-  // Track previous note ID to reset state immediately when note changes
   const prevNoteIdRef = useRef(note.id);
   if (prevNoteIdRef.current !== note.id) {
       prevNoteIdRef.current = note.id;
       setOriginalTitle(note.title);
   }
 
-  // Handle Jump to Line (e.g. from Task List)
   const lastHighlightRef = useRef<any>(null);
 
   useEffect(() => {
     if (highlightedLine && highlightedLine !== lastHighlightRef.current && highlightedLine.noteId === note.id) {
         lastHighlightRef.current = highlightedLine;
-        
-        // Use a small timeout to ensure DOM is ready after mode switch or render
         setTimeout(() => {
              if (backdropRef.current) {
                 const lineEl = backdropRef.current.querySelector(`[data-line="${highlightedLine.lineIndex}"]`);
                 if (lineEl) {
                     lineEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                    
-                    // Set cursor
                     if (textareaRef.current) {
                         const lines = note.content.split('\n');
                         let charIndex = 0;
                         for(let i=0; i<highlightedLine.lineIndex; i++) {
-                            charIndex += (lines[i]?.length || 0) + 1; // +1 for newline
+                            charIndex += (lines[i]?.length || 0) + 1; 
                         }
                         textareaRef.current.focus();
                         textareaRef.current.setSelectionRange(charIndex, charIndex);
-                        
-                        // Update tracking
                         setCurrentLineIndex(highlightedLine.lineIndex);
                     }
                 }
@@ -365,118 +277,130 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     return allNotes.filter(n => n.id !== note.id && !n.deletedAt && n.content.match(regex)).length;
   }, [note.title, originalTitle, allNotes, note.id]);
 
-  // Calculate Related Notes (Cosense-like)
-  const relatedNotes = useMemo(() => {
-      // Filter out deleted notes from calculation
+  const networkData = useMemo(() => {
       const activeAllNotes = allNotes.filter(n => !n.deletedAt);
+      const currentTitle = note.title;
+      const currentId = note.id;
+      const getLinks = (content: string) => extractLinks(content);
 
-      // 1. Outgoing links (Forward)
-      const outgoingLinks = extractLinks(note.content);
+      const outgoingLinks = getLinks(note.content);
+      const directForward = activeAllNotes.filter(n => outgoingLinks.includes(n.title) && n.id !== currentId);
+      const directBack = activeAllNotes.filter(n => n.id !== currentId && getLinks(n.content).includes(currentTitle));
+
+      const directIds = new Set([currentId, ...directForward.map(n=>n.id), ...directBack.map(n=>n.id)]);
       
-      // Existing Notes linked from here
-      const existingOutgoing = activeAllNotes.filter(n => outgoingLinks.includes(n.title) && n.id !== note.id);
-      
-      // Ghost Notes (Missing Links) linked from here
+      const directRealNotes = [...directForward, ...directBack].filter((n, i, self) => 
+          i === self.findIndex(t => t.id === n.id)
+      );
+
       const missingLinks = outgoingLinks.filter(link => !activeAllNotes.some(n => n.title === link));
+      const ghostNotes = missingLinks.map(link => ({
+          id: `ghost-${link}`,
+          folderId: null,
+          title: link,
+          content: 'Missing Note',
+          isGhost: true,
+          updatedAt: Date.now(),
+          createdAt: Date.now()
+      } as Note));
       
-      const ghostNotes: Note[] = missingLinks.map(link => {
-          // Find backlinks to this missing note
-          const linkedFrom = activeAllNotes.filter(n => extractLinks(n.content).includes(link));
+      const directNotes = [...directRealNotes, ...ghostNotes];
+
+      const hubs: Record<string, Note[]> = {};
+
+      directRealNotes.forEach(neighbor => {
+          const relatedNotes: Note[] = [];
           
-          return {
-              id: `ghost-${link}`,
-              folderId: null,
-              title: link,
-              // Show context: "Linked from: [[A]], [[B]]"
-              content: `Missing Note (Ghost).\n\nReferenced by:\n${linkedFrom.map(n => `- [[${n.title}]]`).join('\n')}`,
-              isBookmarked: false,
-              updatedAt: Date.now(),
-              createdAt: Date.now(),
-              isGhost: true
-          } as Note;
-      });
+          const neighborLinks = getLinks(neighbor.content);
+          neighborLinks.forEach(link => {
+              if (link === currentTitle) return;
+              if (link === neighbor.title) return;
 
-      // 2. Incoming links (Backlinks)
-      const backlinkNotes = activeAllNotes.filter(n => {
-          if (n.id === note.id) return false;
-          const links = extractLinks(n.content);
-          return links.includes(note.title);
-      });
+              let target = activeAllNotes.find(n => n.title === link);
+              if (!target) {
+                   target = {
+                       id: `ghost-via-${neighbor.id}-${link}`,
+                       title: link,
+                       content: 'Missing Note',
+                       isGhost: true,
+                       folderId: null,
+                       updatedAt: Date.now(),
+                       createdAt: Date.now(),
+                       isBookmarked: false
+                   };
+              }
 
-      // Combine and deduplicate
-      const combined = [...existingOutgoing, ...ghostNotes];
-      backlinkNotes.forEach(bn => {
-          if (!combined.find(n => n.id === bn.id)) {
-              combined.push(bn);
+              if (target.id && !directIds.has(target.id)) {
+                  relatedNotes.push(target);
+              }
+          });
+
+          const incoming = activeAllNotes.filter(n => {
+              if (n.id === currentId) return false;
+              if (n.id === neighbor.id) return false;
+              if (directIds.has(n.id)) return false; // Exclude direct neighbors
+              return getLinks(n.content).includes(neighbor.title);
+          });
+          relatedNotes.push(...incoming);
+
+          if (relatedNotes.length > 0) {
+              const unique = relatedNotes.filter((n, i, self) => i === self.findIndex(s => s.title === n.title));
+              hubs[neighbor.title] = unique;
           }
       });
-      
-      return combined;
+
+      ghostNotes.forEach(ghost => {
+          const tag = ghost.title;
+          const siblings = activeAllNotes.filter(n => {
+              if (n.id === currentId) return false;
+              if (directIds.has(n.id)) return false;
+              return getLinks(n.content).includes(tag);
+          });
+          
+          if (siblings.length > 0) {
+              hubs[tag] = siblings;
+          }
+      });
+
+      return {
+          direct: directNotes,
+          hubs: hubs
+      };
   }, [note.content, note.title, allNotes, note.id]);
 
-  // Reset scroll and cursor when note changes (Requirement: Link navigation resets view)
-  useEffect(() => {
-      // Scroll the main container to top
-      if (scrollContainerRef.current) {
-          scrollContainerRef.current.scrollTop = 0;
-      }
 
+  useEffect(() => {
+      if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
       if (textareaRef.current) {
           textareaRef.current.scrollTop = 0;
           textareaRef.current.setSelectionRange(0, 0);
-          
-          // Reset internal tracking
           prevSelectionRef.current = 0;
-          setCurrentLineIndex(-1); // Changed from 0 to -1 to avoid activating first line by default
-
-          // Force focus when note changes (e.g. from Command Palette or Sidebar)
-          // We use a timeout to win against CommandPalette closing focus restoration
-          if (isActive && mode === 'edit') {
-             setTimeout(() => {
-                 textareaRef.current?.focus();
-             }, 10);
-          }
+          setCurrentLineIndex(-1);
+          if (isActive && mode === 'edit') setTimeout(() => textareaRef.current?.focus(), 10);
       }
-      if (backdropRef.current) {
-          // Also reset backdrop scroll if it was scrollable (though it usually mirrors textarea)
-          backdropRef.current.scrollTop = 0;
-      }
-      // Close popup when note changes
+      if (backdropRef.current) backdropRef.current.scrollTop = 0;
       setShowPopup(false);
   }, [note.id]);
 
-  // Focus textarea when switching to edit mode
   useEffect(() => {
-    if (mode === 'edit' && textareaRef.current && isActive) {
-      textareaRef.current.focus();
-    }
+    if (mode === 'edit' && textareaRef.current && isActive) textareaRef.current.focus();
   }, [mode, isActive]);
 
-  // Restore cursor position immediately after DOM update to prevent jumping
   useLayoutEffect(() => {
     if (textareaRef.current) {
         if (pendingSelectionRef.current) {
-            // Restore selection range and scroll if needed
             const { start, end, scrollLineIndex } = pendingSelectionRef.current;
             textareaRef.current.setSelectionRange(start, end);
-            
-            // Auto-scroll to keep line in view
             if (scrollLineIndex !== undefined && backdropRef.current) {
                 const lineEl = backdropRef.current.querySelector(`[data-line="${scrollLineIndex}"]`);
-                if (lineEl) {
-                    lineEl.scrollIntoView({ block: 'nearest' });
-                }
+                if (lineEl) lineEl.scrollIntoView({ block: 'nearest' });
             }
-            
-            // Update line tracking
             const line = note.content.substring(0, start).split('\n').length - 1;
             setCurrentLineIndex(line);
             prevSelectionRef.current = start;
-
             pendingSelectionRef.current = null;
-            pendingCursorRef.current = null; // Clear fallback
+            pendingCursorRef.current = null;
         } else if (pendingCursorRef.current !== null) {
-            // Fallback for simple cursor restoration
             textareaRef.current.setSelectionRange(pendingCursorRef.current, pendingCursorRef.current);
             const pos = pendingCursorRef.current;
             prevSelectionRef.current = pos;
@@ -496,41 +420,24 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       }
   };
 
-  // Check if we should show autocomplete
   const checkAutocomplete = (currentCursor: number, text: string) => {
     const textBefore = text.slice(0, currentCursor);
     const lastOpen = textBefore.lastIndexOf('[[');
     const lastClose = textBefore.lastIndexOf(']]');
-    
-    // Check if we are inside [[ and not closed
     if (lastOpen !== -1 && lastOpen > lastClose) {
         const query = textBefore.slice(lastOpen + 2);
-        // Ensure no newlines or backticks inside the query to prevent false positives
         if (!query.includes('\n') && !query.includes('`')) {
             setPopupQuery(query);
             setShowPopup(true);
-            
-            // Calculate accurate position
             const coords = measureSelection(lastOpen, lastOpen + 2);
             if (coords && containerRef.current) {
                  const containerRect = containerRef.current.getBoundingClientRect();
-                 const lineHeight = 24; // Approx line height (can vary based on styling)
-                 
-                 // Standard position: Just below the text line
+                 const lineHeight = 24; 
                  const topPos = containerRect.top + coords.top + lineHeight; 
                  const left = containerRect.left + coords.left;
-                 
-                 // Boundary check
-                 // Reduced est height due to max-h-36 (144px) + header (~30px) + padding = ~180px
                  const POPUP_EST_HEIGHT = 180; 
                  const viewportHeight = window.innerHeight;
-
                  if (topPos + POPUP_EST_HEIGHT > viewportHeight) {
-                    // Not enough space below, flip to above the line.
-                    // Use 'bottom' positioning to ensure it sits right on top of the line 
-                    // regardless of actual content height.
-                    // Anchor to the top of the line (containerRect.top + coords.top)
-                    // Added -4 offset to bring it closer to the text
                     const bottom = viewportHeight - (containerRect.top + coords.top) - 4;
                     setPopupPos({ bottom, left });
                  } else {
@@ -546,18 +453,12 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newVal = e.target.value;
     const newCursorPos = e.target.selectionStart;
-    
     onUpdate(note.id, { content: newVal });
     setCursorIndex(newCursorPos);
-    
     prevSelectionRef.current = newCursorPos;
     const line = newVal.substring(0, newCursorPos).split('\n').length - 1;
     setCurrentLineIndex(line);
-    
-    // Hide context menu on typing
     setSelectionMenu(null);
-
-    // Check Autocomplete
     checkAutocomplete(newCursorPos, newVal);
   };
 
@@ -566,139 +467,88 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       textareaRef.current.style.pointerEvents = 'none';
       const el = document.elementFromPoint(e.clientX, e.clientY);
       textareaRef.current.style.pointerEvents = 'auto';
-      
       let cursor = 'text';
-
-      if (el) {
-        if (el.hasAttribute('data-link-title') || el.hasAttribute('data-url')) {
-          // If we are hovering a link, make sure the cursor reflects it
+      if (el && (el.hasAttribute('data-link-title') || el.hasAttribute('data-url'))) {
           cursor = 'pointer';
-        }
       }
-      
-      if (textareaRef.current.style.cursor !== cursor) {
-          textareaRef.current.style.cursor = cursor;
-      }
+      if (textareaRef.current.style.cursor !== cursor) textareaRef.current.style.cursor = cursor;
   };
   
-  // Calculate selection coordinates for centering the toolbar
   const measureSelection = (start: number, end: number) => {
     if (!textareaRef.current) return null;
     const textarea = textareaRef.current;
-    
     const div = document.createElement('div');
     const styles = window.getComputedStyle(textarea);
-    
-    // Explicitly copy all font/text properties
     const props = [
         'font-family', 'font-size', 'font-weight', 'font-style', 'letter-spacing', 'line-height', 
         'text-transform', 'word-spacing', 'text-indent', 'white-space', 'word-break', 'overflow-wrap',
         'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
         'border-width', 'box-sizing'
     ];
-    
-    props.forEach(prop => {
-        div.style.setProperty(prop, styles.getPropertyValue(prop));
-    });
-    
+    props.forEach(prop => div.style.setProperty(prop, styles.getPropertyValue(prop)));
     div.style.position = 'fixed';
     div.style.top = '-9999px';
     div.style.left = '-9999px';
     div.style.width = styles.width;
     div.style.height = 'auto';
     div.style.visibility = 'hidden';
-    
     const content = textarea.value;
     const before = content.substring(0, start);
     const selected = content.substring(start, end);
     const after = content.substring(end);
-    
     div.textContent = before;
     const span = document.createElement('span');
     span.textContent = selected;
     div.appendChild(span);
     div.appendChild(document.createTextNode(after));
-    
     document.body.appendChild(div);
-    
     const spanRect = span.getBoundingClientRect();
     const divRect = div.getBoundingClientRect();
-    
     const relativeTop = spanRect.top - divRect.top;
     const relativeLeft = spanRect.left - divRect.left;
     const width = spanRect.width;
-    
     document.body.removeChild(div);
-    
-    return {
-        top: relativeTop,
-        left: relativeLeft + (width / 2)
-    };
+    return { top: relativeTop, left: relativeLeft + (width / 2) };
   };
 
   const updateSelectionMenu = () => {
     if (!textareaRef.current || !containerRef.current) return;
-    
     const start = textareaRef.current.selectionStart;
     const end = textareaRef.current.selectionEnd;
-
     if (start !== end) {
         const text = note.content.substring(start, end);
-        
         let top = 0;
         let left = 0;
-
-        // Perform measurement on both mobile and desktop
         const coords = measureSelection(start, end);
         let showBelow = false; 
         if (coords) {
             top = coords.top;
             left = coords.left;
-            if (top < 50) {
-                showBelow = true;
-            }
+            if (top < 50) showBelow = true;
         }
-        
-        setSelectionMenu({
-            top,
-            left,
-            text,
-            start,
-            end,
-            showBelow
-        });
+        setSelectionMenu({ top, left, text, start, end, showBelow });
     } else {
         setSelectionMenu(null);
     }
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLTextAreaElement>) => {
-      // 1. Intercept Link Clicks on the Backdrop
-      // We essentially "hit test" the backdrop element to see if we clicked a link.
-      // If we did, we prevent default (stopping the cursor move/focus change) and open the link.
       if (textareaRef.current) {
-          // Temporarily disable pointer events on textarea to look through it
           textareaRef.current.style.pointerEvents = 'none';
           const el = document.elementFromPoint(e.clientX, e.clientY);
           textareaRef.current.style.pointerEvents = 'auto';
-
           if (el) {
               const url = el.getAttribute('data-url');
               const wikiLink = el.getAttribute('data-link-title');
-
               if (url || wikiLink) {
-                  e.preventDefault(); // This stops the cursor from moving and focusing
-                  e.stopPropagation(); // Stop bubbling
-                  
-                  isLinkClickRef.current = true; // Mark as link click so mouseUp ignores it
-                  
+                  e.preventDefault(); 
+                  e.stopPropagation(); 
+                  isLinkClickRef.current = true; 
                   if (url) window.open(url, '_blank');
                   if (wikiLink) onLinkClick(wikiLink);
                   return;
               }
           }
-
-          // If no link, capture cursor position normally
           prevSelectionRef.current = textareaRef.current.selectionStart;
       }
       isLinkClickRef.current = false;
@@ -707,17 +557,13 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const handleMouseUp = () => {
     if (isLinkClickRef.current) {
         isLinkClickRef.current = false;
-        return; // Ignore mouseUp after a link click to prevent activating the line
+        return; 
     }
-
     updateSelectionMenu();
-    // Only update visual line index, don't update logical selection history
-    // This prevents "click" handler from thinking we've already visited this line
     if (textareaRef.current) {
         const pos = textareaRef.current.selectionStart;
         const line = note.content.substring(0, pos).split('\n').length - 1;
         setCurrentLineIndex(line);
-        // Check if we moved out of autocomplete
         checkAutocomplete(pos, note.content);
     }
   };
@@ -726,21 +572,15 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     if (!selectionMenu) return;
     const { start, end, text } = selectionMenu;
     const isWiki = wrapper === '[[';
-    
     let prefix = wrapper;
     let suffix = wrapper;
-    
     if (isWiki) {
         prefix = '[[';
         suffix = ']]';
     }
-
-    // Logic to toggle? simpler to just apply for now
     const newValue = note.content.substring(0, start) + prefix + text + suffix + note.content.substring(end);
     onUpdate(note.id, { content: newValue });
     setSelectionMenu(null);
-    
-    // Restore cursor / focus
     if(textareaRef.current) {
         textareaRef.current.focus();
         pendingCursorRef.current = start + prefix.length + text.length + suffix.length;
@@ -750,103 +590,75 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const handleExtractNote = () => {
     if (!selectionMenu || !onCreateNoteWithContent) return;
     const { start, end, text } = selectionMenu;
-    
-    // Split by first newline
     const lines = text.split('\n');
     const title = lines[0].trim();
-    // If there is only one line, title is content. If multiple, rest is content.
-    // If multiple lines, we want title = line1, content = rest.
     const content = lines.length > 1 ? lines.slice(1).join('\n').trim() : '';
-
     if (!title) return;
-
     onCreateNoteWithContent(title, content);
-
-    // Replace selection with link
     const newValue = note.content.substring(0, start) + `[[${title}]]` + note.content.substring(end);
     onUpdate(note.id, { content: newValue });
     setSelectionMenu(null);
-
-    // Restore focus
     if(textareaRef.current) {
         textareaRef.current.focus();
-        pendingCursorRef.current = start + title.length + 4; // [[title]] length
+        pendingCursorRef.current = start + title.length + 4; 
     }
   };
 
   const handleContentClick = (e: React.MouseEvent<HTMLTextAreaElement>) => {
-    // Re-evaluate selection on click.
-    // This ensures the toolbar appears for drag/double-click selections (where selection exists)
-    // and disappears for simple clicks (where selection is collapsed).
     updateSelectionMenu();
-
     const target = e.target as HTMLTextAreaElement;
     const currentClickIndex = target.selectionStart;
     const content = note.content;
-
-    // PRIORITY 1: CHECKBOX TOGGLE
     const lineStart = content.lastIndexOf('\n', currentClickIndex - 1) + 1;
     let lineEnd = content.indexOf('\n', currentClickIndex);
     if (lineEnd === -1) lineEnd = content.length;
-    
     const lineText = content.slice(lineStart, lineEnd);
     const taskRegex = /^(\s*)([-*]|\d+\.)\s+\[([ x])\]/;
     const match = lineText.match(taskRegex);
-
     if (match) {
         const fullPrefixLen = match[0].length;
         const openBracketPos = lineStart + fullPrefixLen - 3;
         const closeBracketPos = lineStart + fullPrefixLen - 1;
-
         if (currentClickIndex >= openBracketPos && currentClickIndex <= closeBracketPos + 1) {
             const isChecked = match[3] === 'x';
             const newState = isChecked ? ' ' : 'x';
             const charIndex = lineStart + fullPrefixLen - 2;
             const newContent = content.slice(0, charIndex) + newState + content.slice(charIndex + 1);
-            
             pendingCursorRef.current = currentClickIndex;
             onUpdate(note.id, { content: newContent });
-            updateLineTracking(); // Update history so subsequent clicks know we are here
+            updateLineTracking(); 
             return;
         }
     }
-    
     updateLineTracking();
     checkAutocomplete(currentClickIndex, content);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const target = e.currentTarget;
-
-    // Selection Wrapping with Ctrl/Cmd + [
     if ((e.metaKey || e.ctrlKey) && e.key === '[') {
         const start = target.selectionStart;
         const end = target.selectionEnd;
         if (start !== end) {
             e.preventDefault();
-            e.stopPropagation(); // Stop App.tsx from triggering Go Back
+            e.stopPropagation(); 
             const text = target.value.substring(start, end);
             const newValue = target.value.substring(0, start) + `[[${text}]]` + target.value.substring(end);
             onUpdate(note.id, { content: newValue });
-            // Put cursor after the closing bracket
             pendingCursorRef.current = end + 4; 
             return;
         }
     }
-
-    // Keyboard shortcut for extraction: Cmd+Shift+E
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'e') {
         e.preventDefault();
         const start = target.selectionStart;
         const end = target.selectionEnd;
         if (start !== end) {
             const text = note.content.substring(start, end);
-            
             if (!onCreateNoteWithContent) return;
             const lines = text.split('\n');
             const title = lines[0].trim();
             const content = lines.length > 1 ? lines.slice(1).join('\n').trim() : '';
-            
             if (title) {
                  onCreateNoteWithContent(title, content);
                  const newValue = note.content.substring(0, start) + `[[${title}]]` + note.content.substring(end);
@@ -857,174 +669,93 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         }
         return;
     }
-
-    // New Shortcut: Ctrl+Shift+C (Toggle Task)
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'c') {
         e.preventDefault();
         const start = target.selectionStart;
         const value = target.value;
-        
-        // Find line start/end
         const lineStart = value.lastIndexOf('\n', start - 1) + 1;
         let lineEnd = value.indexOf('\n', start);
         if (lineEnd === -1) lineEnd = value.length;
-        
         const currentLine = value.slice(lineStart, lineEnd);
         let newLine = currentLine;
         let newPos = start;
-
-        // Check for Task
         const taskMatch = currentLine.match(/^(\s*)-\s\[([ x])\]\s(.*)$/);
         if (taskMatch) {
             const indent = taskMatch[1];
             const isChecked = taskMatch[2] === 'x';
             const content = taskMatch[3];
-
             if (!isChecked) {
-                // Task -> Checked Task
                 newLine = `${indent}- [x] ${content}`;
             } else {
-                // Checked Task -> Normal Text
                 newLine = `${indent}${content}`;
-                if (start >= lineStart + indent.length + 6) {
-                    newPos = start - 6;
-                } else if (start > lineStart + indent.length) {
-                    newPos = lineStart + indent.length;
-                }
+                if (start >= lineStart + indent.length + 6) newPos = start - 6;
+                else if (start > lineStart + indent.length) newPos = lineStart + indent.length;
             }
         } else {
-            // Check for List
             const listMatch = currentLine.match(/^(\s*)-\s(.*)$/);
             if (listMatch) {
-                // List -> Task
-                // Insert "[ ] " (4 chars) after "- "
                 newLine = `${listMatch[1]}- [ ] ${listMatch[2]}`;
-                if (start >= lineStart + listMatch[1].length + 2) {
-                    newPos = start + 4;
-                }
+                if (start >= lineStart + listMatch[1].length + 2) newPos = start + 4;
             } else {
-                // Normal -> Task
-                // Insert "- [ ] " (6 chars) at start of content
                 const indentMatch = currentLine.match(/^(\s*)(.*)$/);
                 const indent = indentMatch ? indentMatch[1] : '';
                 const content = indentMatch ? indentMatch[2] : currentLine;
                 newLine = `${indent}- [ ] ${content}`;
-                 if (start >= lineStart + indent.length) {
-                    newPos = start + 6;
-                }
+                 if (start >= lineStart + indent.length) newPos = start + 6;
             }
         }
-
         const newValue = value.slice(0, lineStart) + newLine + value.slice(lineEnd);
         onUpdate(note.id, { content: newValue });
         pendingCursorRef.current = newPos;
         return;
     }
-    
-    // Line Moving: Ctrl/Cmd + Arrow Up/Down (Modified for Multi-line Support)
     if ((e.metaKey || e.ctrlKey) && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         e.preventDefault();
         const start = target.selectionStart;
         const end = target.selectionEnd;
         const value = target.value;
         const lines = value.split('\n');
-        
-        // Find start and end line indices
         const startLineIndex = value.substring(0, start).split('\n').length - 1;
         let endLineIndex = value.substring(0, end).split('\n').length - 1;
-        
-        // Adjustment: if selection ends at the very beginning of a line (after newline),
-        // we generally consider the previous line as the end of selection for block operations,
-        // unless it's a single caret.
         if (end > start && value[end - 1] === '\n') {
-             // Check if we are at start of line
-             const lineStartPos = value.lastIndexOf('\n', end - 2) + 1;
-             if (end === lineStartPos) {
-                 // Empty line selection? No, end is newline char of prev line.
-             }
-             // For simplicity, if end index is at index 0 of a line, subtract 1 from line index
              const linesUntilEnd = value.substring(0, end).split('\n');
              if (linesUntilEnd[linesUntilEnd.length - 1] === '') {
                  endLineIndex = Math.max(startLineIndex, endLineIndex - 1);
              }
         }
-
         if (e.key === 'ArrowUp' && startLineIndex > 0) {
-            // Move block [startLineIndex, endLineIndex] UP
-            // The line above the block is the target to swap with
             const lineToMoveDown = lines[startLineIndex - 1];
-            
-            // Extract the block
             const blockToMove = lines.slice(startLineIndex, endLineIndex + 1);
-            
-            // Remove block from current position
             lines.splice(startLineIndex, blockToMove.length);
-            // Insert block at new position (one line up)
             lines.splice(startLineIndex - 1, 0, ...blockToMove);
-            
             const newContent = lines.join('\n');
             onUpdate(note.id, { content: newContent });
-            
-            // Calculate new selection range
-            // The block shifted up by (length of previous line + 1 newline char)
             const shiftAmount = -(lineToMoveDown.length + 1);
-            
-            pendingSelectionRef.current = {
-                start: start + shiftAmount,
-                end: end + shiftAmount,
-                scrollLineIndex: startLineIndex - 1 // Scroll to new top of block
-            };
+            pendingSelectionRef.current = { start: start + shiftAmount, end: end + shiftAmount, scrollLineIndex: startLineIndex - 1 };
         } 
         else if (e.key === 'ArrowDown' && endLineIndex < lines.length - 1) {
-             // Move block [startLineIndex, endLineIndex] DOWN
-             // The line below the block is the target to swap with
              const lineToMoveUp = lines[endLineIndex + 1];
-             
-             // We want to effectively move the line *below* to *above* the block
-             // Or move the block *after* the line below.
-             
-             // Extract the block
              const blockToMove = lines.slice(startLineIndex, endLineIndex + 1);
-             
-             // Remove block
              lines.splice(startLineIndex, blockToMove.length);
-             // Insert block at new position (start index + 1, because we removed it, so next line shifted up to start index)
              lines.splice(startLineIndex + 1, 0, ...blockToMove);
-             
              const newContent = lines.join('\n');
              onUpdate(note.id, { content: newContent });
-             
-             // Calculate new selection range
-             // The block shifted down by (length of next line + 1 newline char)
              const shiftAmount = lineToMoveUp.length + 1;
-             
-             pendingSelectionRef.current = {
-                 start: start + shiftAmount,
-                 end: end + shiftAmount,
-                 scrollLineIndex: endLineIndex + 1 // Scroll to new bottom of block
-             };
+             pendingSelectionRef.current = { start: start + shiftAmount, end: end + shiftAmount, scrollLineIndex: endLineIndex + 1 };
         }
         return;
     }
-
-    // Indentation: Tab / Shift+Tab
     if (e.key === 'Tab') {
         e.preventDefault();
         const start = target.selectionStart;
         const value = target.value;
-        
-        // Find line start
         const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-
         if (e.shiftKey) {
-            // Outdent: Remove 2 spaces if present
             const lineEnd = value.indexOf('\n', start);
             const currentLine = value.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
-            
             if (currentLine.startsWith('  ')) {
                 const newValue = value.slice(0, lineStart) + value.slice(lineStart + 2);
                 onUpdate(note.id, { content: newValue });
-                // Move cursor back 2 chars, stopping at line start
                 pendingCursorRef.current = Math.max(lineStart, start - 2);
             } else if (currentLine.startsWith('\t')) {
                  const newValue = value.slice(0, lineStart) + value.slice(lineStart + 1);
@@ -1032,22 +763,18 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                  pendingCursorRef.current = Math.max(lineStart, start - 1);
             }
         } else {
-            // Indent: Add 2 spaces at start of line
             const newValue = value.slice(0, lineStart) + '  ' + value.slice(lineStart);
             onUpdate(note.id, { content: newValue });
-            // Move cursor forward 2 chars
             pendingCursorRef.current = start + 2;
         }
         return;
     }
-
     if (showPopup) {
        if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'Enter') {
            if (e.key === 'Enter') e.preventDefault();
            return;
        }
     }
-
     if (e.key === 'Enter') {
       const target = e.target as HTMLTextAreaElement;
       const start = target.selectionStart;
@@ -1055,43 +782,25 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       const currentLineStart = value.lastIndexOf('\n', start - 1) + 1;
       const currentLineEnd = value.indexOf('\n', start);
       const currentLine = value.slice(currentLineStart, currentLineEnd === -1 ? undefined : currentLineEnd);
-      
       const listMatch = currentLine.match(/^(\s*)([-*]|\d+\.)\s/);
-      
       if (listMatch) {
         e.preventDefault();
         const basePrefix = listMatch[0];
-        
-        // Check for task regex: e.g. "   - [ ] " or "1. [x] "
         const taskRegex = /^(\s*)([-*]|\d+\.)\s+\[([ x])\]\s/;
         const taskMatch = currentLine.match(taskRegex);
-        
-        // Determine the "full" prefix. If it's a task, the prefix includes the bracket part.
         const fullPrefix = taskMatch ? taskMatch[0] : basePrefix;
-
-        // If the current line is *strictly* just the prefix (trimmed), we clear the line.
-        // This handles standard bullets "- " and tasks "- [ ] " alike.
         if (currentLine.trim() === fullPrefix.trim()) {
             const newValue = value.slice(0, currentLineStart) + value.slice(start);
             pendingCursorRef.current = currentLineStart;
             onUpdate(note.id, { content: newValue });
         } else {
-            // Otherwise, we create a new line with the continuation prefix.
             let nextPrefix = basePrefix;
-            
-            // Handle Number Increment
             const numMatch = basePrefix.match(/^(\s*)(\d+)\.\s/);
             if (numMatch) {
                 const num = parseInt(numMatch[2], 10);
                 nextPrefix = `${numMatch[1]}${num + 1}. `;
             }
-
-            // Handle Task Checkbox
-            if (taskMatch) {
-                 // Clean trailing space of the list marker and append empty checkbox
-                 nextPrefix = nextPrefix.trimEnd() + ' [ ] ';
-            }
-
+            if (taskMatch) nextPrefix = nextPrefix.trimEnd() + ' [ ] ';
             const newValue = value.slice(0, start) + '\n' + nextPrefix + value.slice(start);
             pendingCursorRef.current = start + 1 + nextPrefix.length;
             onUpdate(note.id, { content: newValue });
@@ -1103,7 +812,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const handleKeyUp = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     updateLineTracking();
     updateSelectionMenu();
-    // Check if cursor moved out of autocomplete context (e.g. arrow keys)
     const target = e.target as HTMLTextAreaElement;
     checkAutocomplete(target.selectionStart, note.content);
   };
@@ -1121,31 +829,34 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     }
   };
 
-  // Renders the text behind the textarea
-  const renderBackdrop = (content: string) => {
+  const renderBackdrop = (content: string, activeLine: number) => {
       const lines = content.split('\n');
-      
-      // Create a set of existing titles for quick lookup
       const existingTitles = new Set(allNotes.filter(n => !n.deletedAt).map(n => n.title));
-
+      
       return lines.map((line, index) => {
-          const isActive = index === currentLineIndex;
+          const isActive = index === activeLine;
+          
+          if (isActive) {
+              return (
+                <div 
+                    key={index} 
+                    className="whitespace-pre-wrap break-words bg-transparent min-h-[1.5em] w-full text-slate-800 dark:text-slate-300"
+                    data-line={index}
+                >
+                    {line || <br/>}
+                </div>
+              );
+          }
 
           let contentNode: React.ReactNode = line;
-          
-          // Regex to identify code spans, wiki links, OR URLs
-          // Exclude ')' from URL match to support [text](url) format
           const regex = /(`[^`]+`|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\[\[[^\]]+\]\]|https?:\/\/[^\s)]+)/g;
           const parts = line.split(regex);
-          
           if (parts.length > 1) {
              contentNode = parts.map((part, i) => {
                  if (part.startsWith('`')) {
-                     // Code span
                      return <span key={i} className="text-amber-600 dark:text-amber-200">{part}</span>;
                  }
                  if (part.startsWith('![') && part.includes('](') && part.endsWith(')')) {
-                    // Image Syntax Highlight: ![alt](url)
                     const match = part.match(/!\[([^\]]*)\]\(([^)]+)\)/);
                     if (match) {
                         const alt = match[1];
@@ -1154,7 +865,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                             <span key={i} className="text-amber-600 dark:text-amber-500">
                                 {'!['}{alt}{']('}
                                 <span 
-                                    className={`${isActive ? '' : 'underline decoration-amber-500/50 cursor-pointer pointer-events-auto'} z-10 relative`}
+                                    className="underline decoration-amber-500/50 cursor-pointer pointer-events-auto relative"
                                     data-url={url}
                                     data-line-index={index}
                                 >
@@ -1167,7 +878,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                     return <span key={i} className="text-amber-600 dark:text-amber-500">{part}</span>;
                  }
                  if (part.startsWith('[') && !part.startsWith('[[') && part.includes('](') && part.endsWith(')')) {
-                    // Link Syntax Highlight: [text](url)
                     const match = part.match(/\[([^\]]+)\]\(([^)]+)\)/);
                     if (match) {
                         const text = match[1];
@@ -1178,7 +888,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                                 <span className="text-blue-600 dark:text-blue-400">{text}</span>
                                 {']('}
                                 <span 
-                                    className={`${isActive ? '' : 'underline decoration-blue-500/50 cursor-pointer pointer-events-auto'} z-10 relative`}
+                                    className="underline decoration-blue-500/50 cursor-pointer pointer-events-auto relative"
                                     data-url={url}
                                     data-line-index={index}
                                 >
@@ -1193,17 +903,15 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                  if (part.startsWith('[[') && part.endsWith(']]')) {
                      const title = part.slice(2, -2);
                      const exists = existingTitles.has(title);
-                     
                      return (
                          <span 
                             key={i} 
                             className={`
-                                ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 
-                                  exists 
+                                ${exists 
                                     ? 'text-indigo-600 dark:text-indigo-400 underline decoration-indigo-500/50 pointer-events-auto'
                                     : 'text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 underline opacity-60 pointer-events-auto'
                                 }
-                                z-10 relative
+                                relative
                             `}
                             data-link-title={title}
                             data-line-index={index}
@@ -1216,10 +924,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                      return (
                          <span 
                             key={i} 
-                            className={`
-                                ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-blue-600 dark:text-blue-400 underline decoration-blue-500/50 pointer-events-auto'}
-                                z-10 relative
-                            `}
+                            className="text-blue-600 dark:text-blue-400 underline decoration-blue-500/50 pointer-events-auto relative"
                             data-url={part}
                             data-line-index={index}
                          >
@@ -1232,9 +937,12 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
           } else {
              if (line === '') contentNode = <br/>;
           }
-
           return (
-            <div key={index} className="whitespace-pre-wrap break-words" data-line={index}>
+            <div 
+                key={index} 
+                className="whitespace-pre-wrap break-words bg-white dark:bg-slate-950 min-h-[1.5em] w-full" 
+                data-line={index}
+            >
                 {contentNode}
             </div>
           );
@@ -1245,48 +953,34 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     const lines = note.content.split('\n');
     let currentTaskCount = 0;
     let inCodeBlock = false;
-
     const newLines = lines.map(line => {
-        // Toggle code block state
         if (line.trim().startsWith('```')) {
             inCodeBlock = !inCodeBlock;
             return line;
         }
-
-        // If in code block, do not process as task
-        if (inCodeBlock) {
-            return line;
-        }
-
-        // Regex to identify a task line
+        if (inCodeBlock) return line;
         const taskRegex = /^(\s*)([-*]|\d+\.)\s+\[([ x])\]\s(.*)$/;
         const match = line.match(taskRegex);
         if (match) {
             if (currentTaskCount === taskIndex) {
                 const isChecked = match[3] === 'x';
                 const newStatus = isChecked ? ' ' : 'x';
-                // Reconstruct line
                 return `${match[1]}${match[2]} [${newStatus}] ${match[4]}`;
             }
             currentTaskCount++;
         }
         return line;
     });
-    
     onUpdate(note.id, { content: newLines.join('\n') });
   };
 
   const handlePreviewClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
-    
-    // Wiki Links
     if (target.classList.contains('wiki-link')) {
       const link = target.getAttribute('data-link');
       if (link) onLinkClick(link);
       return;
     }
-
-    // Interactive Checkboxes
     if (target.tagName === 'INPUT' && target.getAttribute('type') === 'checkbox') {
         const indexStr = target.getAttribute('data-task-index');
         if (indexStr !== null) {
@@ -1295,6 +989,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         }
     }
   };
+
+  const hasRelatedNotes = networkData.direct.length > 0 || Object.keys(networkData.hubs).length > 0;
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-950 relative group transition-colors duration-200">
@@ -1305,11 +1001,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 value={note.title}
                 onChange={(e) => {
                     onUpdate(note.id, { title: e.target.value });
-                    // 入力に合わせて高さを自動調整
                     e.target.style.height = 'auto';
                     e.target.style.height = e.target.scrollHeight + 'px';
                 }}
-                // 初期表示時に高さを合わせる
                 ref={(el) => {
                     if (el) {
                         el.style.height = 'auto';
@@ -1317,7 +1011,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                     }
                 }}
                 rows={1}
-                // Enterキーでの改行を無効化（タイトルなので）
                 onKeyDown={(e) => {
                     if (e.key === 'Enter') e.preventDefault();
                 }}
@@ -1342,7 +1035,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             </div>
         </div>
         
-        {/* Link Refactor Prompt */}
         {linkedNotesCount > 0 && (
             <div className="mt-2 flex items-center animate-in fade-in slide-in-from-top-1 duration-200">
                 <button
@@ -1364,17 +1056,15 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         <div className="flex flex-col min-h-full">
             {mode === 'edit' ? (
             <div className="relative w-full flex-1 min-h-[200px]" ref={containerRef}>
-                {/* Backdrop: Syntax Highlighting */}
                 <div 
                     ref={backdropRef}
-                    className={`min-h-full px-8 pt-4 pb-12 font-sans text-slate-800 dark:text-slate-300 whitespace-pre-wrap break-words pointer-events-none ${isComposing ? 'opacity-0' : 'opacity-100'}`}
+                    className={`min-h-full px-8 pt-4 pb-12 font-sans text-slate-800 dark:text-slate-300 whitespace-pre-wrap break-words pointer-events-none z-0`}
                     style={{ fontSize: `${fontSize}px`, lineHeight: 1.6 }}
                     aria-hidden="true"
                 >
-                    {renderBackdrop(note.content)}
+                    {renderBackdrop(note.content, currentLineIndex)}
                 </div>
 
-                {/* Textarea: Input handling, Transparent Text */}
                 <textarea
                 ref={textareaRef}
                 value={note.content}
@@ -1391,98 +1081,49 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 onKeyDown={handleKeyDown}
                 onKeyUp={handleKeyUp}
                 onBlur={() => setSelectionMenu(null)}
-                className={`absolute inset-0 w-full h-full px-8 pt-4 pb-12 bg-transparent caret-indigo-600 dark:caret-slate-200 font-sans resize-none focus:outline-none z-10 overflow-hidden ${isComposing ? 'text-slate-800 dark:text-slate-300' : 'text-transparent'}`}
+                className={`absolute inset-0 w-full h-full px-8 pt-4 pb-12 bg-transparent caret-indigo-600 dark:caret-slate-200 font-sans resize-none focus:outline-none overflow-hidden z-10 text-transparent`}
                 style={{ fontSize: `${fontSize}px`, lineHeight: 1.6 }}
                 placeholder="Start typing..."
                 spellCheck={false}
                 />
                 
-                {/* Selection Toolbar */}
                 {selectionMenu && (
                     <div 
                         className={`
                             z-50 flex items-center bg-slate-900 dark:bg-slate-200 shadow-xl border border-slate-700 dark:border-slate-300 gap-0.5 animate-in fade-in duration-100
                             ${isMobile 
-                                // Mobile: Absolute positioning relative to text, but below (mt-8) to avoid iOS selection menu (which is above)
                                 ? 'absolute rounded-full px-3 py-2 shadow-2xl -translate-x-1/2 mt-8' 
                                 : selectionMenu.showBelow
-                                    // 1行目用（下側に表示）
                                     ? 'absolute rounded-md p-1 -translate-x-1/2 mt-8 zoom-in-95'
-                                    // 通常（上側に表示）
                                     : 'absolute rounded-md p-1 -translate-x-1/2 -translate-y-full mt-[-10px] zoom-in-95'
                             }
                         `}
                         style={{ top: selectionMenu.top, left: selectionMenu.left }} 
-                        onMouseDown={(e) => e.preventDefault()} // Prevent blur
+                        onMouseDown={(e) => e.preventDefault()} 
                     >
-                        {/* 1. Less than 1 line (No newlines) */}
                         {!selectionMenu.text.includes('\n') && (
                             <>
-                                <button 
-                                    onClick={() => handleWrapText('**')}
-                                    className="p-1.5 md:p-1 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded"
-                                    title="Bold"
-                                >
-                                    <Bold size={14} />
-                                </button>
-                                <button 
-                                    onClick={() => handleWrapText('*')}
-                                    className="p-1.5 md:p-1 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded"
-                                    title="Italic"
-                                >
-                                    <Italic size={14} />
-                                </button>
-                                <button 
-                                    onClick={() => handleWrapText('~~')}
-                                    className="p-1.5 md:p-1 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded"
-                                    title="Strikethrough"
-                                >
-                                    <Strikethrough size={14} />
-                                </button>
-                                <button 
-                                    onClick={() => handleWrapText('`')}
-                                    className="p-1.5 md:p-1 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded"
-                                    title="Code"
-                                >
-                                    <Code size={14} />
-                                </button>
-                                <button 
-                                    onClick={() => handleWrapText('[[')}
-                                    className="p-1.5 md:p-1 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded"
-                                    title="Link"
-                                >
-                                    <LinkIcon size={14} />
-                                </button>
+                                <button onClick={() => handleWrapText('**')} className="p-1.5 md:p-1 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded" title="Bold"><Bold size={14} /></button>
+                                <button onClick={() => handleWrapText('*')} className="p-1.5 md:p-1 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded" title="Italic"><Italic size={14} /></button>
+                                <button onClick={() => handleWrapText('~~')} className="p-1.5 md:p-1 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded" title="Strikethrough"><Strikethrough size={14} /></button>
+                                <button onClick={() => handleWrapText('`')} className="p-1.5 md:p-1 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded" title="Code"><Code size={14} /></button>
+                                <button onClick={() => handleWrapText('[[')} className="p-1.5 md:p-1 text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded" title="Link"><LinkIcon size={14} /></button>
                             </>
                         )}
-
-                        {/* 2. 2 lines or more (Has newlines) */}
                         {selectionMenu.text.includes('\n') && (
-                            <button 
-                                onClick={handleExtractNote}
-                                className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded"
-                                title="Extract to New Note (Cmd+Shift+E)"
-                            >
-                                <FilePlus size={14} />
-                                <span>Extract Note</span>
-                            </button>
+                            <button onClick={handleExtractNote} className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-slate-300 dark:text-slate-800 hover:text-white dark:hover:text-black hover:bg-slate-700 dark:hover:bg-slate-300 rounded" title="Extract to New Note (Cmd+Shift+E)"><FilePlus size={14} /><span>Extract Note</span></button>
                         )}
-                        
-                        {/* Tail (Desktop Only) */}
                         {!isMobile && (
                             <div className={`
                                 absolute left-1/2 w-2 h-2 bg-slate-900 dark:bg-slate-200 -translate-x-1/2 rotate-45
                                 ${selectionMenu.showBelow
-                                    // 下表示用 (上辺に配置、左・上のボーダー)
                                     ? 'top-0 -translate-y-1/2 border-l border-t border-slate-700 dark:border-slate-300'
-                                    // 通常 (底辺に配置、右・下のボーダー)
                                     : 'bottom-0 translate-y-1/2 border-r border-b border-slate-700 dark:border-slate-300'
                                 }
                             `}></div>
                         )}
                     </div>
                 )}
-
                 {showPopup && (
                 <WikiLinkPopup
                     query={popupQuery}
@@ -1502,20 +1143,56 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             />
             )}
 
-            {/* Footer: Related Notes (Cosense-like) */}
-            {relatedNotes.length > 0 && (
+            {/* Footer: Related Notes (Cosense-like Layout) */}
+            {hasRelatedNotes && (
                 <div className="border-t border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950/50 p-6 shrink-0 mt-auto">
-                    <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Related Notes</h3>
-                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                        {relatedNotes.map(n => (
-                            <NoteCard 
-                                key={n.id} 
-                                note={n} 
-                                onLinkClick={onLinkClick} 
-                                currentNoteTitle={note.title}
-                            />
-                        ))}
-                    </div>
+                    
+                    {/* 1. Direct References (Standard Grid) */}
+                    {networkData.direct.length > 0 && (
+                        <div className="mb-8">
+                            <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Direct References</h3>
+                            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                                {networkData.direct.map(n => (
+                                    <NoteCard 
+                                        key={n.id} 
+                                        note={n} 
+                                        onLinkClick={onLinkClick} 
+                                        currentNoteTitle={note.title}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 2. Indirect (2-Hop) Links Grouped by Hub */}
+                    {Object.keys(networkData.hubs).length > 0 && (
+                        <div>
+                             <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Related via...</h3>
+                             <div className="space-y-8">
+                                {Object.entries(networkData.hubs).map(([hubTitle, connectedNotes]) => (
+                                    <div key={hubTitle} className="">
+                                        <div 
+                                            className="inline-flex items-center gap-1.5 px-2 py-1 mb-3 rounded text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer hover:underline"
+                                            onClick={() => onLinkClick(hubTitle)}
+                                        >
+                                            <Link2 size={14} className="text-indigo-400 dark:text-indigo-500" />
+                                            {hubTitle}
+                                        </div>
+                                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                                            {connectedNotes.map(n => (
+                                                <NoteCard 
+                                                    key={n.id} 
+                                                    note={n} 
+                                                    onLinkClick={onLinkClick} 
+                                                    currentNoteTitle={note.title}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                             </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
