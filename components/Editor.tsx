@@ -149,7 +149,7 @@ const renderMarkdown = (content: string, existingTitles?: Set<string>) => {
 
             html += `<div class="flex items-start gap-2 my-1" style="margin-left: ${marginLeft}px">
                 <input type="checkbox" ${isChecked ? 'checked' : ''} class="mt-1.5 cursor-pointer" data-task-index="${currentTaskIndex}">
-                <span class="${isChecked ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'}">${parseInline(text), existingTitles}</span>
+                <span class="${isChecked ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'}">${parseInline(text, existingTitles)}</span>
             </div>`;
             continue;
         }
