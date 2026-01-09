@@ -292,6 +292,18 @@ export default function App() {
       localStorage.setItem(LS_KEY_DAILY_PREFS, JSON.stringify(prefs));
   }, [dailyNoteFormat, dailyNoteFolderId, dailyNoteTemplate]);
 
+  // ブラウザのタブタイトルを更新する
+  useEffect(() => {
+    const activeId = panes[activePaneIndex];
+    const currentNote = notes.find(n => n.id === activeId);
+    if (currentNote) {
+        const displayTitle = currentNote.title.trim() || 'Untitled';
+        document.title = `${displayTitle} - Rhizonote`;
+    } else {
+        document.title = 'Rhizonote';
+    }
+  }, [notes, panes, activePaneIndex]);
+
   // Cleanup expired trash on mount
   useEffect(() => {
       cleanupExpiredTrash();
