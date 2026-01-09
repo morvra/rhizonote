@@ -12,10 +12,11 @@ interface WikiLinkPopupProps {
 const WikiLinkPopup: React.FC<WikiLinkPopupProps> = ({ query, notes, onSelect, position, onClose }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  // Filter and limit to top 4 results
+  // Filter and limit to top 5 results
   const filteredNotes = notes
     .filter((note) => note.title.toLowerCase().includes(query.toLowerCase()))
-    .slice(0, 4);
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+    .slice(0, 5);
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -59,7 +60,7 @@ const WikiLinkPopup: React.FC<WikiLinkPopupProps> = ({ query, notes, onSelect, p
       <div className="text-xs text-slate-400 px-3 py-1 bg-slate-900 border-b border-slate-700">
         Link to...
       </div>
-      <ul className="max-h-36 overflow-y-auto">
+      <ul className="max-h-45 overflow-y-auto">
         {filteredNotes.map((note, index) => (
           <li
             key={note.id}
