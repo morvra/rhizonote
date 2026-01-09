@@ -800,24 +800,70 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     if (e.key === 'Tab') {
         e.preventDefault();
         const start = target.selectionStart;
+        const end = target.selectionEnd;
         const value = target.value;
-        const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+
+        // 1. 選択範囲が含まれる「行の範囲」を特定する
+        const startLineStart = value.lastIndexOf('\n', start - 1) + 1;
+        let endLineEnd = value.indexOf('\n', end);
+        if (endLineEnd === -1) endLineEnd = value.length;
+
+        // 末尾が改行文字ちょうどの場合の調整
+        if (end > start && value[end - 1] === '\n' && endLineEnd === end - 1) {
+             // 必要であればここで調整（現状はそのままでOK）
+        }
+
+        // 2. 影響を受ける行だけを配列として取り出す
+        const activeLines = value.substring(startLineStart, endLineEnd).split('\n');
+
         if (e.shiftKey) {
-            const lineEnd = value.indexOf('\n', start);
-            const currentLine = value.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
-            if (currentLine.startsWith('  ')) {
-                const newValue = value.slice(0, lineStart) + value.slice(lineStart + 2);
-                onUpdate(note.id, { content: newValue });
-                pendingCursorRef.current = Math.max(lineStart, start - 2);
-            } else if (currentLine.startsWith('\t')) {
-                 const newValue = value.slice(0, lineStart) + value.slice(lineStart + 1);
-                 onUpdate(note.id, { content: newValue });
-                 pendingCursorRef.current = Math.max(lineStart, start - 1);
-            }
-        } else {
-            const newValue = value.slice(0, lineStart) + '  ' + value.slice(lineStart);
+            // --- Shift + Tab (アンインデント: 削除) ---
+            const newLines = activeLines.map(line => {
+                if (line.startsWith('  ')) return line.substring(2);
+                if (line.startsWith('\t')) return line.substring(1);
+                return line;
+            });
+
+            const newBlock = newLines.join('\n');
+            const newValue = value.substring(0, startLineStart) + newBlock + value.substring(endLineEnd);
+
             onUpdate(note.id, { content: newValue });
-            pendingCursorRef.current = start + 2;
+
+            if (start === end) {
+                // 選択なし（カーソルのみ）：カーソル位置を調整して選択はしない
+                const deletedLength = activeLines[0].length - newLines[0].length;
+                pendingCursorRef.current = Math.max(startLineStart, start - deletedLength);
+            } else {
+                // 範囲選択あり：行全体を選択状態で維持する
+                pendingSelectionRef.current = {
+                    start: startLineStart,
+                    end: startLineStart + newBlock.length
+                };
+            }
+
+        } else {
+            // --- Tab (インデント: 追加) ---
+
+            if (start === end) {
+                // 選択なし（カーソルのみ）：行頭にスペースを挿入する
+                const newValue = value.substring(0, startLineStart) + '  ' + value.substring(startLineStart);
+                onUpdate(note.id, { content: newValue });
+                pendingCursorRef.current = start + 2;
+                return;
+            }
+
+            // 範囲選択あり：選択された行すべてのアタマにスペースを追加
+            const newLines = activeLines.map(line => '  ' + line);
+            const newBlock = newLines.join('\n');
+            const newValue = value.substring(0, startLineStart) + newBlock + value.substring(endLineEnd);
+            
+            onUpdate(note.id, { content: newValue });
+            
+            // 選択範囲を行全体に広げて維持する
+            pendingSelectionRef.current = {
+                start: startLineStart,
+                end: startLineStart + newBlock.length
+            };
         }
         return;
     }
