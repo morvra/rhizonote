@@ -644,7 +644,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     const { start, end, text } = selectionMenu;
     const lines = text.split('\n');
     const title = lines[0].trim();
-    const content = lines.length > 1 ? lines.slice(1).join('\n').trim() : '';
+    let content = lines.length > 1 ? lines.slice(1).join('\n').trim() : '';
+    content += `\n\nfrom [[${note.title}]]`;
     if (!title) return;
     onCreateNoteWithContent(title, content);
     const newValue = note.content.substring(0, start) + `[[${title}]]` + note.content.substring(end);
@@ -710,7 +711,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             if (!onCreateNoteWithContent) return;
             const lines = text.split('\n');
             const title = lines[0].trim();
-            const content = lines.length > 1 ? lines.slice(1).join('\n').trim() : '';
+            let content = lines.length > 1 ? lines.slice(1).join('\n').trim() : '';
+            content += `\n\nfrom [[${note.title}]]`;
             if (title) {
                  onCreateNoteWithContent(title, content);
                  const newValue = note.content.substring(0, start) + `[[${title}]]` + note.content.substring(end);
