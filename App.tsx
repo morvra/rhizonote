@@ -469,31 +469,44 @@ export default function App() {
   const isSyncingRef = useRef(false);
   const lastSyncTimeRef = useRef<number>(0);
 
-  // Auto-sync on visibility change and periodic sync
+  // Auto-sync on visibility change, blur, and periodic sync
   useEffect(() => {
       if (!autoSync || (!dropboxToken && !dropboxRefreshToken)) return;
 
       let intervalId: number | undefined;
       const MIN_SYNC_INTERVAL = 3 * 60 * 1000; // 最低3分間隔（レート制限対策）
 
-      const syncIfNeeded = async () => {
+      // force=true の場合は、直近の編集や同期間隔を無視して同期を試みる（離脱時用）
+      const syncIfNeeded = async (force = false) => {
           const now = Date.now();
           const timeSinceLastSync = now - lastSyncTimeRef.current;
           const timeSinceLastEdit = now - lastEditTimeRef.current;
+          
+          // 変更があるか簡易チェック (Refなのでクロージャの影響を受けずに最新の値が見れる)
+          const hasChanges = unsyncedNoteIds.current.size > 0;
 
-          // 既に同期中なら何もしない
+          // 1. 既に同期中なら何もしない
           if (isSyncingRef.current) {
               return;
           }
 
-          // 執筆中（最後の編集から5秒以内）は自動同期しない
-          if (timeSinceLastEdit < 5000) {
-              return;
-          }
-
-          // 最後の同期から3分経っていなければスキップ
-          if (timeSinceLastSync < MIN_SYNC_INTERVAL) {
-              return;
+          if (!force) {
+              // 通常時（定期同期・復帰時）のチェック
+              
+              // 執筆中（最後の編集から5秒以内）は自動同期しない
+              if (timeSinceLastEdit < 5000) {
+                  return;
+              }
+              // 最後の同期から3分経っていなければスキップ
+              if (timeSinceLastSync < MIN_SYNC_INTERVAL) {
+                  return;
+              }
+          } else {
+              // 強制時（離脱時）：変更がなければスキップして無駄な通信を防ぐ
+              if (!hasChanges) {
+                  return;
+              }
+              // 変更があるなら、間隔無視で実行へ進む
           }
 
           isSyncingRef.current = true;
@@ -510,30 +523,32 @@ export default function App() {
           }
       };
 
-      // 1. ページが表示されたときに同期
+      // 1. ページの表示状態が変わったとき（タブ切り替え、最小化など）
       const handleVisibilityChange = () => {
           if (document.visibilityState === 'visible') {
-              syncIfNeeded();
+              syncIfNeeded(false); // 戻ってきたとき（通常のチェック）
+          } else if (document.visibilityState === 'hidden') {
+              syncIfNeeded(true);  // 隠れたとき（強制同期）
           }
       };
 
-      // 2. ウィンドウがフォーカスされたときに同期
-      const handleFocus = () => {
-          syncIfNeeded();
-      };
+      // 2. ウィンドウのフォーカス状態が変わったとき（アプリ切り替えなど）
+      const handleWindowFocus = () => syncIfNeeded(false); // フォーカス取得（通常のチェック）
+      const handleWindowBlur = () => syncIfNeeded(true);   // フォーカス喪失（強制同期）
 
       // 3. 定期的な自動同期（5分ごと）
       intervalId = window.setInterval(() => {
-          syncIfNeeded();
+          syncIfNeeded(false);
       }, 5 * 60 * 1000);
 
       // イベントリスナー登録
       document.addEventListener('visibilitychange', handleVisibilityChange);
-      window.addEventListener('focus', handleFocus);
+      window.addEventListener('focus', handleWindowFocus);
+      window.addEventListener('blur', handleWindowBlur);
 
       // 初回同期
       const initialSyncTimeout = setTimeout(() => {
-          syncIfNeeded();
+          syncIfNeeded(false);
       }, 1500);
 
       // クリーンアップ
@@ -541,7 +556,8 @@ export default function App() {
           if (intervalId) clearInterval(intervalId);
           clearTimeout(initialSyncTimeout);
           document.removeEventListener('visibilitychange', handleVisibilityChange);
-          window.removeEventListener('focus', handleFocus);
+          window.removeEventListener('focus', handleWindowFocus);
+          window.removeEventListener('blur', handleWindowBlur);
       };
   }, [autoSync, dropboxToken, dropboxRefreshToken]);
 
