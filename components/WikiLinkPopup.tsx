@@ -7,14 +7,16 @@ interface WikiLinkPopupProps {
   onSelect: (noteTitle: string) => void;
   position: { top?: number; bottom?: number; left: number };
   onClose: () => void;
+  currentNoteId?: string | null;
 }
 
-const WikiLinkPopup: React.FC<WikiLinkPopupProps> = ({ query, notes, onSelect, position, onClose }) => {
+const WikiLinkPopup: React.FC<WikiLinkPopupProps> = ({ query, notes, onSelect, position, onClose, currentNoteId }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   // Filter and limit to top 5 results
   const filteredNotes = notes
     .filter((note) => note.title.toLowerCase().includes(query.toLowerCase()))
+    .filter((note) => note.id !== currentNoteId)
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
     .slice(0, 5);
 

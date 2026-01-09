@@ -1280,6 +1280,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                     onSelect={insertWikiLink}
                     position={popupPos}
                     onClose={() => setShowPopup(false)}
+                    currentNoteId={note.id}
                 />
                 )}
             </div>
