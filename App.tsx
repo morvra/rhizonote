@@ -1256,7 +1256,7 @@ export default function App() {
             e.preventDefault();
             handleCreateNote();
         }
-        if (isMod && e.key.toLowerCase() === 'd') {
+        if (e.altKey && e.key.toLowerCase() === 'd') {
             e.preventDefault();
             handleOpenDailyNote();
         }
@@ -1339,7 +1339,7 @@ export default function App() {
   const commands: CommandItem[] = useMemo(() => {
     const baseCommands: CommandItem[] = [
         { id: 'new-note', label: 'Create New Note', icon: <Plus size={16}/>, action: handleCreateNote, shortcut: 'Ctrl+Alt+N', group: 'Actions' },
-        { id: 'daily-note', label: 'Open Daily Note', icon: <Calendar size={16}/>, action: handleOpenDailyNote, shortcut: 'Ctrl+D', group: 'Actions' },
+        { id: 'daily-note', label: 'Open Daily Note', icon: <Calendar size={16}/>, action: handleOpenDailyNote, shortcut: 'Alt+D', group: 'Actions' },
         { id: 'random-note', label: 'Open Random Note', icon: <Shuffle size={16}/>, action: handleOpenRandomNote, shortcut: 'Alt+R', group: 'Actions' },
         { id: 'toggle-preview', label: 'Toggle Edit/Preview', icon: <Eye size={16}/>, action: handleTogglePreview, shortcut: 'Ctrl+E', group: 'View' },
         { id: 'split-view', label: 'Toggle Split View', icon: <Columns size={16}/>, action: toggleSplitView, shortcut: 'Ctrl+Shift+V', group: 'View' },
@@ -1466,7 +1466,7 @@ export default function App() {
                     <button
                         onClick={handleOpenDailyNote}
                         className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
-                        title="Open Today's Note (Cmd/Ctrl + D)"
+                        title="Open Today's Note (Alt + D)"
                     >
                         <Calendar size={18} />
                     </button>
@@ -1862,11 +1862,11 @@ export default function App() {
                      <ShortcutRow keys={['Ctrl', 'P']} description="Open Command Palette" />
                      <ShortcutRow keys={['Ctrl', 'Alt', 'N']} description="Create New Note" />
                      <ShortcutRow keys={['Ctrl', 'E']} description="Toggle Edit/Preview" />
-                     <ShortcutRow keys={['Ctrl', 'D']} description="Open Daily Note" />
                      <ShortcutRow keys={['Ctrl', 'S']} description="Sync to Dropbox" />
                      <ShortcutRow keys={['Ctrl', '\\']} description="Toggle Sidebar" />
                      <ShortcutRow keys={['Ctrl', 'Shift', 'V']} description="Toggle Split View" />
                      <ShortcutRow keys={['Ctrl', '?']} description="Show Shortcuts" />
+                     <ShortcutRow keys={['Alt', 'D']} description="Open Daily Note" />
                      <ShortcutRow keys={['Alt', 'T']} description="Toggle Task List" />
                      <ShortcutRow keys={['Alt', 'R']} description="Open Random Note" />
                      <ShortcutRow keys={['Ctrl', '[']} description="Go Back" />
