@@ -1273,11 +1273,14 @@ export default function App() {
                 return true;
             });
         }
+        if (isMod && e.shiftKey && e.key.toLowerCase() === 'v') {
+            e.preventDefault();
+            toggleSplitView();
+        }
         if (isMod && e.key.toLowerCase() === 'k') {
             e.preventDefault();
             setIsCommandPaletteOpen(prev => !prev);
         }
-        // New Shortcut: Ctrl+P for Command Palette
         if (isMod && e.key.toLowerCase() === 'p') {
             e.preventDefault();
             setIsCommandPaletteOpen(prev => !prev);
@@ -1327,6 +1330,7 @@ export default function App() {
         { id: 'daily-note', label: 'Open Daily Note', icon: <Calendar size={16}/>, action: handleOpenDailyNote, shortcut: 'Ctrl+D', group: 'Actions' },
         { id: 'random-note', label: 'Open Random Note', icon: <Shuffle size={16}/>, action: handleOpenRandomNote, shortcut: 'Alt+R', group: 'Actions' },
         { id: 'toggle-preview', label: 'Toggle Edit/Preview', icon: <Eye size={16}/>, action: handleTogglePreview, shortcut: 'Ctrl+E', group: 'View' },
+        { id: 'split-view', label: 'Toggle Split View', icon: <Columns size={16}/>, action: toggleSplitView, shortcut: 'Ctrl+Shift+V', group: 'View' },
         { id: 'split-view', label: 'Toggle Split View', icon: <Columns size={16}/>, action: toggleSplitView, group: 'View' },
         { id: 'sync', label: 'Start Sync', icon: <RefreshCw size={16}/>, action: handleSync, shortcut: 'Ctrl+S', group: 'System' },
         { id: 'tasks', label: 'Show Tasks', icon: <CheckSquare size={16}/>, action: () => setShowTasks(true), shortcut: 'Alt+T', group: 'View' },
@@ -1849,6 +1853,7 @@ export default function App() {
                      <ShortcutRow keys={['Ctrl', 'D']} description="Open Daily Note" />
                      <ShortcutRow keys={['Ctrl', 'S']} description="Sync to Dropbox" />
                      <ShortcutRow keys={['Ctrl', '\\']} description="Toggle Sidebar" />
+                     <ShortcutRow keys={['Ctrl', 'Shift', 'V']} description="Toggle Split View" />
                      <ShortcutRow keys={['Ctrl', '?']} description="Show Shortcuts" />
                      <ShortcutRow keys={['Alt', 'T']} description="Toggle Task List" />
                      <ShortcutRow keys={['Alt', 'R']} description="Open Random Note" />
