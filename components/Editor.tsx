@@ -60,7 +60,7 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, onLinkClick }) => {
 };
 
 // Simple Markdown Parser for Preview Mode
-const parseInline = (text: string) => {
+const parseInline = (text: string, existingTitles?: Set<string>) => {
     const placeholders: string[] = [];
     const addPlaceholder = (content: string) => {
         placeholders.push(content);
@@ -82,7 +82,12 @@ const parseInline = (text: string) => {
             return addPlaceholder(`<a href="${href}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">${txt}</a>`);
         })
         .replace(/\[\[(.*?)\]\]/g, (_match, title) => {
-            return addPlaceholder(`<span class="wiki-link text-indigo-600 dark:text-indigo-400 cursor-pointer hover:underline font-medium" data-link="${title}">${title}</span>`);
+            const exists = existingTitles ? existingTitles.has(title) : true;
+            const className = exists
+                ? "wiki-link text-indigo-600 dark:text-indigo-400 cursor-pointer hover:underline font-medium"
+                : "wiki-link text-red-500 dark:text-red-400 cursor-pointer hover:underline opacity-80";
+
+            return addPlaceholder(`<span class="${className}" data-link="${title}">${title}</span>`);
         })
         .replace(/(https?:\/\/[^\s)]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">$1</a>');
 
@@ -93,7 +98,7 @@ const parseInline = (text: string) => {
     return processed;
 };
 
-const renderMarkdown = (content: string) => {
+const renderMarkdown = (content: string, existingTitles?: Set<string>) => {
     let html = '';
     let inCodeBlock = false;
     let taskIndex = 0;
@@ -117,20 +122,20 @@ const renderMarkdown = (content: string) => {
         }
 
         if (line.startsWith('# ')) {
-            html += `<h1 class="text-3xl font-bold mb-4 mt-2 text-slate-900 dark:text-white">${parseInline(line.slice(2))}</h1>`;
+            html += `<h1 class="text-3xl font-bold mb-4 mt-2 text-slate-900 dark:text-white">${parseInline(line.slice(2), existingTitles)}</h1>`;
             continue;
         }
         if (line.startsWith('## ')) {
-            html += `<h2 class="text-2xl font-bold mb-3 mt-6 text-slate-800 dark:text-slate-100 border-b border-gray-200 dark:border-slate-800 pb-2">${parseInline(line.slice(3))}</h2>`;
+            html += `<h2 class="text-2xl font-bold mb-3 mt-6 text-slate-800 dark:text-slate-100 border-b border-gray-200 dark:border-slate-800 pb-2">${parseInline(line.slice(3), existingTitles)}</h2>`;
             continue;
         }
         if (line.startsWith('### ')) {
-            html += `<h3 class="text-xl font-bold mb-2 mt-4 text-slate-800 dark:text-slate-100">${parseInline(line.slice(4))}</h3>`;
+            html += `<h3 class="text-xl font-bold mb-2 mt-4 text-slate-800 dark:text-slate-100">$${parseInline(line.slice(4), existingTitles)}</h3>`;
             continue;
         }
         
         if (line.startsWith('> ')) {
-            html += `<blockquote class="border-l-4 border-gray-300 dark:border-slate-700 pl-4 italic my-4 text-slate-600 dark:text-slate-400">${parseInline(line.slice(2))}</blockquote>`;
+            html += `<blockquote class="border-l-4 border-gray-300 dark:border-slate-700 pl-4 italic my-4 text-slate-600 dark:text-slate-400">${parseInline(line.slice(2), existingTitles)}</blockquote>`;
             continue;
         }
 
@@ -144,7 +149,7 @@ const renderMarkdown = (content: string) => {
 
             html += `<div class="flex items-start gap-2 my-1" style="margin-left: ${marginLeft}px">
                 <input type="checkbox" ${isChecked ? 'checked' : ''} class="mt-1.5 cursor-pointer" data-task-index="${currentTaskIndex}">
-                <span class="${isChecked ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'}">${parseInline(text)}</span>
+                <span class="${isChecked ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'}">${parseInline(text), existingTitles}</span>
             </div>`;
             continue;
         }
@@ -153,7 +158,7 @@ const renderMarkdown = (content: string) => {
         if (ulMatch) {
              const indentSpace = ulMatch[1].length;
              const marginLeft = 20 + (indentSpace * 12);
-             html += `<li class="list-disc text-slate-700 dark:text-slate-300" style="margin-left: ${marginLeft}px">${parseInline(ulMatch[2])}</li>`;
+             html += `<li class="list-disc text-slate-700 dark:text-slate-300" style="margin-left: ${marginLeft}px">${parseInline(ulMatch[2], existingTitles)}</li>`;
              continue;
         }
         
@@ -161,7 +166,7 @@ const renderMarkdown = (content: string) => {
         if (olMatch) {
              const indentSpace = olMatch[1].length;
              const marginLeft = 20 + (indentSpace * 12);
-             html += `<li class="list-decimal text-slate-700 dark:text-slate-300" style="margin-left: ${marginLeft}px">${parseInline(olMatch[2])}</li>`;
+             html += `<li class="list-decimal text-slate-700 dark:text-slate-300" style="margin-left: ${marginLeft}px">${parseInline(olMatch[2], existingTitles)}</li>`;
              continue;
         }
 
@@ -175,7 +180,7 @@ const renderMarkdown = (content: string) => {
             continue;
         }
 
-        html += `<p class="mb-2 text-slate-700 dark:text-slate-300 leading-relaxed">${parseInline(line)}</p>`;
+        html += `<p class="mb-2 text-slate-700 dark:text-slate-300 leading-relaxed">${parseInline(line, existingTitles)}</p>`;
     }
 
     return { __html: html };
@@ -894,7 +899,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                             <span key={i} className="text-amber-600 dark:text-amber-500">
                                 {'!['}{alt}{']('}
                                 <span 
-                                    className="underline decoration-amber-500/50 cursor-pointer pointer-events-auto relative"
+                                    className="underline decoration-amber-500 cursor-pointer pointer-events-auto relative"
                                     data-url={url}
                                     data-line-index={index}
                                 >
@@ -917,7 +922,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                                 <span className="text-blue-600 dark:text-blue-400">{text}</span>
                                 {']('}
                                 <span 
-                                    className="underline decoration-blue-500/50 cursor-pointer pointer-events-auto relative"
+                                    className="underline decoration-blue-500 cursor-pointer pointer-events-auto relative"
                                     data-url={url}
                                     data-line-index={index}
                                 >
@@ -937,7 +942,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                             key={i} 
                             className={`
                                 ${exists 
-                                    ? 'text-indigo-600 dark:text-indigo-400 underline decoration-indigo-500/50 pointer-events-auto'
+                                    ? 'text-indigo-600 dark:text-indigo-400 underline decoration-indigo-500 pointer-events-auto'
                                     : 'text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 underline opacity-60 pointer-events-auto'
                                 }
                                 relative
@@ -953,7 +958,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                      return (
                          <span 
                             key={i} 
-                            className="text-blue-600 dark:text-blue-400 underline decoration-blue-500/50 pointer-events-auto relative"
+                            className="text-blue-600 dark:text-blue-400 underline decoration-blue-500 pointer-events-auto relative"
                             data-url={part}
                             data-line-index={index}
                          >
@@ -1166,7 +1171,10 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             <div 
                 className="w-full h-full px-8 pt-4 pb-12 prose prose-slate dark:prose-invert max-w-none transition-colors duration-200 flex-1 min-h-[200px] break-words"
                 style={{ fontSize: `${fontSize}px` }}
-                dangerouslySetInnerHTML={renderMarkdown(note.content)}
+                dangerouslySetInnerHTML={renderMarkdown(
+                    note.content, 
+                    new Set(allNotes.filter(n => !n.deletedAt).map(n => n.title))
+                )}
                 onClick={handlePreviewClick}
             />
             )}
