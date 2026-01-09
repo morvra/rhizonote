@@ -194,7 +194,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const [isMobile, setIsMobile] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
 
-  // Markdown記号を除去して文字数をカウントする
+  // Markdown記号を除去して文字数をカウントする関数
   const getCleanCharCount = (text: string) => {
     return text
       .replace(/^#+\s/gm, '')
@@ -1071,49 +1071,52 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 placeholder="Note Title"
             />
             <div className="flex items-center gap-2">
-                <div className="relative">
-                        <button
-                            onClick={() => setShowInfo(!showInfo)}
-                            className={`p-1.5 rounded transition-colors ${showInfo ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
-                            title="Note Info"
-                        >
-                            <Info size={18} />
-                        </button>
+                <div 
+                    className="relative"
+                    onMouseEnter={() => setShowInfo(true)}
+                    onMouseLeave={() => setShowInfo(false)}
+                >
+                    <button
+                        className={`p-1.5 rounded transition-colors ${showInfo ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
+                        title="Note Info"
+                    >
+                        <Info size={18} />
+                    </button>
 
-                        {showInfo && (
-                            <>
-                                <div className="fixed inset-0 z-40" onClick={() => setShowInfo(false)} />
-                                <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl z-50 p-4 text-sm animate-in fade-in zoom-in-95 duration-100">
-                                    <div className="space-y-3">
-                                        <div>
-                                            <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Created</div>
-                                            <div className="text-slate-700 dark:text-slate-300 font-mono text-xs">
-                                                {formatDate(note.createdAt)}
-                                            </div>
+                    {showInfo && (
+                        /* ポップアップ本体 */
+                        <div className="absolute right-0 top-full pt-2 z-50">
+                            <div className="w-64 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl p-4 text-sm animate-in fade-in zoom-in-95 duration-100">
+                                <div className="space-y-3">
+                                    <div>
+                                        <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Created</div>
+                                        <div className="text-slate-700 dark:text-slate-300 font-mono text-xs">
+                                            {formatDate(note.createdAt)}
                                         </div>
-                                        <div>
-                                            <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Updated</div>
-                                            <div className="text-slate-700 dark:text-slate-300 font-mono text-xs">
-                                                {formatDate(note.updatedAt)}
-                                            </div>
+                                    </div>
+                                    <div>
+                                        <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Updated</div>
+                                        <div className="text-slate-700 dark:text-slate-300 font-mono text-xs">
+                                            {formatDate(note.updatedAt)}
                                         </div>
-                                        <div className="pt-2 border-t border-gray-100 dark:border-slate-800">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Characters</span>
-                                                <span className="text-indigo-600 dark:text-indigo-400 font-bold font-mono">
-                                                    {getCleanCharCount(note.content).toLocaleString()}
-                                                </span>
-                                            </div>
-                                            <div className="flex justify-between items-center mt-1">
-                                                <span className="text-xs text-slate-400">Raw Length</span>
-                                                <span className="text-slate-500 dark:text-slate-500 text-xs font-mono">
-                                                    {note.content.length.toLocaleString()}
-                                                </span>
-                                            </div>
+                                    </div>
+                                    <div className="pt-2 border-t border-gray-100 dark:border-slate-800">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Characters</span>
+                                            <span className="text-indigo-600 dark:text-indigo-400 font-bold font-mono">
+                                                {getCleanCharCount(note.content).toLocaleString()}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center mt-1">
+                                            <span className="text-xs text-slate-400">Raw Length</span>
+                                            <span className="text-slate-500 dark:text-slate-500 text-xs font-mono">
+                                                {note.content.length.toLocaleString()}
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
-                            </>
+                            </div>
+                        </div>
                         )}
                     </div>
                 <div className="flex items-center gap-2 bg-gray-200 dark:bg-slate-800 rounded p-1">
