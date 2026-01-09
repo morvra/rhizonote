@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Note } from '../types';
 import WikiLinkPopup from './WikiLinkPopup';
-import { Edit3, Eye, RefreshCw, Bold, Italic, Strikethrough, Code, Link as LinkIcon, FilePlus, Link2 } from 'lucide-react';
+import { Edit3, Eye, RefreshCw, Bold, Italic, Strikethrough, Code, Link as LinkIcon, FilePlus, Link2, Info } from 'lucide-react';
 
 interface EditorProps {
   note: Note;
@@ -192,6 +192,25 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const backdropRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
+
+  // Markdown記号を除去して文字数をカウントする
+  const getCleanCharCount = (text: string) => {
+    return text
+      .replace(/^#+\s/gm, '')
+      .replace(/(\*\*|__)(.*?)\1/g, '$2')
+      .replace(/(\*|_)(.*?)\1/g, '$2')
+      .replace(/~~(.*?)~~/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+      .replace(/\[\[(.*?)\]\]/g, '$1')
+      .replace(/\n/g, '')
+      .length;
+  };
+  
+  // 日付フォーマット関数
+  const formatDate = (ts: number) => new Date(ts).toLocaleString();
 
   useEffect(() => {
     const handleWindowKeyDown = (e: KeyboardEvent) => {
@@ -1051,21 +1070,68 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 className="bg-transparent text-xl font-bold text-slate-800 dark:text-slate-200 focus:outline-none w-full mr-4 placeholder-slate-400 dark:placeholder-slate-600 resize-none overflow-hidden"
                 placeholder="Note Title"
             />
-            <div className="flex items-center gap-2 bg-gray-200 dark:bg-slate-800 rounded p-1">
-            <button
-                onClick={() => setMode('edit')}
-                className={`p-1.5 rounded transition-colors ${mode === 'edit' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
-                title="Edit Mode (Ctrl/Cmd + E)"
-            >
-                <Edit3 size={16} />
-            </button>
-            <button
-                onClick={() => setMode('preview')}
-                className={`p-1.5 rounded transition-colors ${mode === 'preview' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
-                title="Reading Mode (Ctrl/Cmd + E)"
-            >
-                <Eye size={16} />
-            </button>
+            <div className="flex items-center gap-2">
+                <div className="relative">
+                        <button
+                            onClick={() => setShowInfo(!showInfo)}
+                            className={`p-1.5 rounded transition-colors ${showInfo ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
+                            title="Note Info"
+                        >
+                            <Info size={18} />
+                        </button>
+
+                        {showInfo && (
+                            <>
+                                <div className="fixed inset-0 z-40" onClick={() => setShowInfo(false)} />
+                                <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl z-50 p-4 text-sm animate-in fade-in zoom-in-95 duration-100">
+                                    <div className="space-y-3">
+                                        <div>
+                                            <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Created</div>
+                                            <div className="text-slate-700 dark:text-slate-300 font-mono text-xs">
+                                                {formatDate(note.createdAt)}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Updated</div>
+                                            <div className="text-slate-700 dark:text-slate-300 font-mono text-xs">
+                                                {formatDate(note.updatedAt)}
+                                            </div>
+                                        </div>
+                                        <div className="pt-2 border-t border-gray-100 dark:border-slate-800">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Characters</span>
+                                                <span className="text-indigo-600 dark:text-indigo-400 font-bold font-mono">
+                                                    {getCleanCharCount(note.content).toLocaleString()}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between items-center mt-1">
+                                                <span className="text-xs text-slate-400">Raw Length</span>
+                                                <span className="text-slate-500 dark:text-slate-500 text-xs font-mono">
+                                                    {note.content.length.toLocaleString()}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                <div className="flex items-center gap-2 bg-gray-200 dark:bg-slate-800 rounded p-1">
+                <button
+                    onClick={() => setMode('edit')}
+                    className={`p-1.5 rounded transition-colors ${mode === 'edit' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
+                    title="Edit Mode (Ctrl/Cmd + E)"
+                >
+                    <Edit3 size={16} />
+                </button>
+                <button
+                    onClick={() => setMode('preview')}
+                    className={`p-1.5 rounded transition-colors ${mode === 'preview' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
+                    title="Reading Mode (Ctrl/Cmd + E)"
+                >
+                    <Eye size={16} />
+                </button>
+                </div>
             </div>
         </div>
         
