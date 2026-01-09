@@ -68,7 +68,6 @@ const parseInline = (text: string, existingTitles?: Set<string>) => {
     };
 
     let processed = text
-        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
         .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>')
         .replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
         .replace(/~~(.*?)~~/g, '<del class="line-through text-slate-400">$1</del>')
