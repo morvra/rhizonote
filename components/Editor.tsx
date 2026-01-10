@@ -48,13 +48,11 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, onLinkClick }) => {
                 {note.title}
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-3 mb-auto whitespace-pre-wrap leading-relaxed">
-                {note.content.replace(/#/g, '').replace(/\[\[/g, '').replace(/\]\]/g, '')}
+                {note.isGhost 
+                    ? <span className="opacity-50 italic">Click to create this note...</span>
+                    : note.content.replace(/#/g, '').replace(/\[\[/g, '').replace(/\]\]/g, '')
+                }
             </p>
-            {note.isGhost && (
-                <div className="mt-2 text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
-                    Missing Note
-                </div>
-            )}
         </div>
     );
 };
