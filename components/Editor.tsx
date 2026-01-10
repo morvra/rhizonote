@@ -743,7 +743,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         if (e.cancelable) e.preventDefault();
 
         // 感度調整: 8pxにつき1文字移動
-        const charsMove = Math.round(deltaX / 8);
+        const charsMove = Math.round(deltaX / 16);
         const newPos = Math.max(0, Math.min(localContent.length, touchCursorRef.current.startSelection + charsMove));
 
         if (textareaRef.current.selectionStart !== newPos) {
