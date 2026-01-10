@@ -761,11 +761,11 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   };
 
   // タッチ終了時のクリーンアップ
-  const handleTouchEnd = (e: React.TouchEvent<HTMLTextAreaElement>) => {
+  const handleTouchEnd = () => {
     touchCursorRef.current = null;
     handleMouseUp(); // 既存のhandleMouseUp（オートコンプリートチェック等）も呼ぶ
   };
-
+  
   const handleWrapText = (wrapper: string) => {
     if (!selectionMenu) return;
     const { start, end, text } = selectionMenu;
