@@ -239,6 +239,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const prevSelectionRef = useRef<number>(0);
   const [currentLineIndex, setCurrentLineIndex] = useState<number>(-1);
   const pendingCursorRef = useRef<number | null>(null);
+  const [hoveredImageUrl, setHoveredImageUrl] = useState<string | null>(null);
   const pendingSelectionRef = useRef<{ start: number; end: number; scrollLineIndex?: number } | null>(null);
   const [showPopup, setShowPopup] = useState(false);
   const [popupQuery, setPopupQuery] = useState('');
@@ -551,14 +552,34 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
   const handleMouseMove = (e: React.MouseEvent<HTMLTextAreaElement>) => {
       if (!textareaRef.current) return;
+      
+      // テキストエリアのポインターイベントを一瞬無効化して、背面の要素を取得するハック
       textareaRef.current.style.pointerEvents = 'none';
       const el = document.elementFromPoint(e.clientX, e.clientY);
       textareaRef.current.style.pointerEvents = 'auto';
+      
       let cursor = 'text';
-      if (el && (el.hasAttribute('data-link-title') || el.hasAttribute('data-url'))) {
-          cursor = 'pointer';
+      let newHoveredImage = null;
+
+      if (el) {
+          // リンクタイトルの判定
+          if (el.hasAttribute('data-link-title') || el.hasAttribute('data-url')) {
+              cursor = 'pointer';
+          }
+          
+          // 画像プレビュー対象かどうかの判定 (data-image-preview属性を確認)
+          const imgUrl = el.getAttribute('data-image-preview');
+          if (imgUrl) {
+              newHoveredImage = imgUrl;
+          }
       }
+      
+      // カーソルスタイルの適用
       if (textareaRef.current.style.cursor !== cursor) textareaRef.current.style.cursor = cursor;
+      // ホバー中の画像状態を更新（変更があった場合のみ再レンダリング）
+      if (hoveredImageUrl !== newHoveredImage) {
+          setHoveredImageUrl(newHoveredImage);
+      }
   };
   
   const measureSelection = (start: number, end: number) => {
@@ -1046,16 +1067,36 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                         const alt = match[1];
                         const url = match[2];
                         return (
-                            <span key={i} className="text-amber-600 dark:text-amber-500">
+                            <span key={i} className="text-amber-600 dark:text-amber-500 relative inline-block">
                                 {'!['}{alt}{']('}
                                 <span 
-                                    className="underline decoration-amber-500 cursor-pointer pointer-events-auto relative"
+                                    className="underline decoration-amber-500 cursor-pointer pointer-events-auto relative z-10"
                                     data-url={url}
                                     data-line-index={index}
+                                    data-image-preview={url}
                                 >
                                     {url}
                                 </span>
                                 {')'}
+
+                                {/* CSSホバーではなく、State (hoveredImageUrl) に基づいて表示を制御 */}
+                                <span 
+                                    className={`
+                                        absolute left-0 top-full mt-2 z-50 pointer-events-none select-none px-2
+                                        ${hoveredImageUrl === url ? 'block' : 'hidden'}
+                                    `}
+                                >
+                                    <div className="bg-white dark:bg-slate-800 p-1 border border-gray-200 dark:border-slate-700 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+                                        <img 
+                                            src={url} 
+                                            alt={alt} 
+                                            className="max-w-[360px] max-h-[300px] object-contain bg-gray-50 dark:bg-slate-900"
+                                            onError={(e) => {
+                                                e.currentTarget.style.display = 'none';
+                                            }}
+                                        />
+                                    </div>
+                                </span>
                             </span>
                         );
                     }
