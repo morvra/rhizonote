@@ -1,4 +1,104 @@
-// utils/dropboxService.ts
+import { Dropbox, DropboxAuth } from 'dropbox';
+import { Note, Folder } from '../types';
+
+const CLIENT_ID = '2reog117jgm9gmw';
+
+export interface SyncData {
+  notes: Note[];
+  folders: Folder[];
+  version: number;
+  timestamp: number;
+  syncLog: string[]; // For UI feedback
+}
+
+export interface RenameOperation {
+    from: string;
+    to: string;
+}
+
+export interface DropboxAuthResult {
+    result: {
+        access_token: string;
+        refresh_token: string;
+        expires_in?: number;
+        uid?: string;
+    }
+}
+
+// Helper: Sanitize filename to avoid invalid characters in Dropbox paths
+export const sanitizeFilename = (name: string) => {
+  return name.replace(/[/\\?%*:|"<>]/g, '-');
+};
+
+// Helper: Get full path for a folder
+export const getFolderPath = (folderId: string | null, folders: Folder[]): string => {
+    if (!folderId) return '';
+    const folder = folders.find(f => f.id === folderId);
+    if (!folder) return '';
+    const parentPath = getFolderPath(folder.parentId, folders);
+    return parentPath
+        ? `${parentPath}/${sanitizeFilename(folder.name)}`
+        : `/${sanitizeFilename(folder.name)}`;
+};
+
+// Helper: Generate full path for a note
+export const getNotePath = (noteTitle: string, folderId: string | null, folders: Folder[]) => {
+    const folderPath = getFolderPath(folderId, folders);
+    const safeTitle = sanitizeFilename(noteTitle) || 'Untitled';
+    return `${folderPath}/${safeTitle}.md`;
+};
+
+// Helper: Process requests in chunks to avoid hitting browser/API limits
+const chunkArray = <T>(array: T[], size: number): T[][] => {
+  return Array.from({ length: Math.ceil(array.length / size) }, (_, i) =>
+    array.slice(i * size, i * size + size)
+  );
+};
+
+// Updated to use PKCE flow (async)
+// We manually handle the code verifier storage to ensure reliability across the redirect
+export const getDropboxAuthUrl = async (): Promise<string> => {
+  const dbxAuth = new DropboxAuth({ clientId: CLIENT_ID });
+  const redirectUri = window.location.href.split('#')[0].split('?')[0];
+  
+  // Args: redirectUri, state, responseType, tokenAccessType, scope, includeGrantedScopes, usePkce
+  const authUrl = await dbxAuth.getAuthenticationUrl(redirectUri, undefined, 'code', 'offline', undefined, undefined, true);
+  
+  // Explicitly save the code verifier to sessionStorage
+  const codeVerifier = dbxAuth.getCodeVerifier();
+  if (codeVerifier) {
+      window.sessionStorage.setItem('rhizonote_dropbox_code_verifier', codeVerifier);
+  }
+
+  return authUrl as string;
+};
+
+// New helper to exchange authorization code for tokens
+export const exchangeCodeForToken = async (code: string): Promise<DropboxAuthResult> => {
+    const dbxAuth = new DropboxAuth({ clientId: CLIENT_ID });
+    
+    // Retrieve and set the code verifier
+    const codeVerifier = window.sessionStorage.getItem('rhizonote_dropbox_code_verifier');
+    if (codeVerifier) {
+        dbxAuth.setCodeVerifier(codeVerifier);
+    }
+
+    const redirectUri = window.location.href.split('#')[0].split('?')[0];
+    const response = await dbxAuth.getAccessTokenFromCode(redirectUri, code);
+    
+    // Clean up
+    window.sessionStorage.removeItem('rhizonote_dropbox_code_verifier');
+    
+    return response as unknown as DropboxAuthResult;
+};
+
+// Parsing hash is no longer the primary method, but kept for legacy/cleanup if needed
+export const parseAuthTokenFromUrl = (): string | null => {
+  const hash = window.location.hash;
+  if (!hash) return null;
+  const params = new URLSearchParams(hash.substring(1));
+  return params.get('access_token');
+};
 
 /**
  * Performs a smart two-way sync with proper conflict resolution.
@@ -147,7 +247,7 @@ export const syncDropboxData = async (
     
     const remoteNotesByIdMap = new Map<string, RemoteNoteData[]>();
 
-    // 最適化: ローカルのノートパスをインデックス化
+    // 【修正・追加】最適化: ローカルのノートパスをインデックス化
     // ダウンロード前にパスと更新日時を比較するため、ローカルノートの予想パスをマップ化します
     const localNotePaths = new Map<string, Note>();
     localNotes.forEach(n => {
@@ -162,6 +262,7 @@ export const syncDropboxData = async (
     for (const batch of downloadChunks) {
         await Promise.all(batch.map(async (entry) => {
             try {
+                // 【修正・追加】最適化: タイムスタンプ比較によるダウンロードスキップ
                 const localMatch = localNotePaths.get(entry.path_lower);
                 const remoteTime = new Date(entry.client_modified).getTime();
 
