@@ -496,14 +496,9 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
             </div>
 
-            <div 
-            className="flex-1 overflow-y-auto p-2" 
-            onDragOver={(e) => e.preventDefault()} 
-            onDrop={handleRootDrop}
-            >
             {bookmarkedNotes.length > 0 && !isSearching && (
-                <div className="mb-4">
-                <div className="px-3 py-1 text-xs md:text-[10px] font-semibold text-slate-500 dark:text-slate-600 uppercase tracking-wider mb-1 flex items-center gap-1">
+              <div className="shrink-0 max-h-[30vh] overflow-y-auto border-b border-gray-200 dark:border-slate-800 p-2">
+                <div className="px-3 py-1 text-xs md:text-[10px] font-semibold text-slate-500 dark:text-slate-600 uppercase tracking-wider mb-1 flex items-center gap-1 sticky top-0 bg-gray-50 dark:bg-slate-900 z-10">
                     <Bookmark size={12} className="md:w-[10px] md:h-[10px]" /> Bookmarks
                 </div>
                 {bookmarkedNotes.map((note) => (
@@ -517,8 +512,14 @@ const Sidebar: React.FC<SidebarProps> = ({
                         onNoteDrop={onReorderBookmark}
                     />
                 ))}
-                </div>
+              </div>
             )}
+
+            <div 
+            className="flex-1 overflow-y-auto p-2" 
+            onDragOver={(e) => e.preventDefault()} 
+            onDrop={handleRootDrop}
+            >
 
             {isSearching ? (
                 /* Flat list for search results */
