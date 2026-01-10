@@ -304,87 +304,124 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       const currentId = note.id;
       const getLinks = (content: string) => extractLinks(content);
 
-      const outgoingLinks = getLinks(note.content);
-      const directForward = activeAllNotes.filter(n => outgoingLinks.includes(n.title) && n.id !== currentId);
-      const directBack = activeAllNotes.filter(n => n.id !== currentId && getLinks(n.content).includes(currentTitle));
+      // 1. Outgoing (本文に出てくる順序) のリストを作成
+      const rawLinks = getLinks(note.content); // リンクテキストの配列（出現順）
+      const outgoingNotes: Note[] = [];
+      const seenIds = new Set<string>(); // 重復防止用
+      seenIds.add(currentId); // 自分自身は除外
 
-      const directIds = new Set([currentId, ...directForward.map(n=>n.id), ...directBack.map(n=>n.id)]);
-      
-      const directRealNotes = [...directForward, ...directBack].filter((n, i, self) => 
-          i === self.findIndex(t => t.id === n.id)
-      );
-
-      const missingLinks = outgoingLinks.filter(link => !activeAllNotes.some(n => n.title === link));
-      const ghostNotes = missingLinks.map(link => ({
-          id: `ghost-${link}`,
-          folderId: null,
-          title: link,
-          content: 'Missing Note',
-          isGhost: true,
-          updatedAt: Date.now(),
-          createdAt: Date.now()
-      } as Note));
-      
-      const directNotes = [...directRealNotes, ...ghostNotes];
-
-      const hubs: Record<string, Note[]> = {};
-
-      directRealNotes.forEach(neighbor => {
-          const relatedNotes: Note[] = [];
+      rawLinks.forEach(linkTitle => {
+          let target = activeAllNotes.find(n => n.title === linkTitle);
           
-          const neighborLinks = getLinks(neighbor.content);
-          neighborLinks.forEach(link => {
-              if (link === currentTitle) return;
-              if (link === neighbor.title) return;
-
-              let target = activeAllNotes.find(n => n.title === link);
-              if (!target) {
-                   target = {
-                       id: `ghost-via-${neighbor.id}-${link}`,
-                       title: link,
-                       content: 'Missing Note',
-                       isGhost: true,
-                       folderId: null,
-                       updatedAt: Date.now(),
-                       createdAt: Date.now(),
-                       isBookmarked: false
-                   };
+          if (target) {
+              if (!seenIds.has(target.id)) {
+                  outgoingNotes.push(target);
+                  seenIds.add(target.id);
               }
-
-              if (target.id && !directIds.has(target.id)) {
-                  relatedNotes.push(target);
+          } else {
+              // Ghost (まだ存在しないノート) の場合
+              const alreadyAdded = outgoingNotes.some(n => n.title === linkTitle);
+              if (!alreadyAdded) {
+                  const ghost: Note = {
+                      id: `ghost-${linkTitle}`,
+                      folderId: null,
+                      title: linkTitle,
+                      content: 'Missing Note',
+                      isGhost: true,
+                      updatedAt: Date.now(),
+                      createdAt: Date.now(),
+                      isBookmarked: false
+                  };
+                  outgoingNotes.push(ghost);
+                  seenIds.add(ghost.id);
               }
-          });
-
-          const incoming = activeAllNotes.filter(n => {
-              if (n.id === currentId) return false;
-              if (n.id === neighbor.id) return false;
-              if (directIds.has(n.id)) return false; // Exclude direct neighbors
-              return getLinks(n.content).includes(neighbor.title);
-          });
-          relatedNotes.push(...incoming);
-
-          if (relatedNotes.length > 0) {
-              const unique = relatedNotes.filter((n, i, self) => i === self.findIndex(s => s.title === n.title));
-              hubs[neighbor.title] = unique;
           }
       });
 
-      ghostNotes.forEach(ghost => {
-          const tag = ghost.title;
-          const siblings = activeAllNotes.filter(n => {
+      // 2. Backlinks (このノートへリンクしているノート) のリストを作成
+      // Outgoingに含まれていないものだけを抽出し、更新日時順(新しい順)に並べる
+      const backlinkNotes = activeAllNotes
+          .filter(n => {
               if (n.id === currentId) return false;
-              if (directIds.has(n.id)) return false;
-              return getLinks(n.content).includes(tag);
-          });
-          
-          if (siblings.length > 0) {
-              hubs[tag] = siblings;
+              if (seenIds.has(n.id)) return false; // 既にOutgoingにあるなら除外
+              
+              // 相手の本文に自分のタイトルが含まれているか
+              return getLinks(n.content).includes(currentTitle);
+          })
+          .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+      // 3. Direct References の完成 (Outgoing順 + Backlink更新順)
+      const sortedDirectNotes = [...outgoingNotes, ...backlinkNotes];
+
+      // 4. Hubs (Related Via) の計算
+      const hubs: Record<string, Note[]> = {};
+
+      sortedDirectNotes.forEach(neighbor => {
+          // Neighbor自体がHubとなって繋がっている先のノートを探す
+          const relatedNotes: Note[] = [];
+
+          if (neighbor.isGhost) {
+              // Ghostの場合: 他のノートで「このGhostへのリンク」を持っているものを探す (Siblings)
+              const siblings = activeAllNotes.filter(n => {
+                  if (n.id === currentId) return false;
+                  return getLinks(n.content).includes(neighbor.title);
+              });
+              relatedNotes.push(...siblings);
+
+          } else {
+              // 実在ノートの場合: 
+              // A (Current) <-> B (Neighbor) <-> C (Related)
+              
+              // パターン1: Neighbor -> C (NeighborがCへリンクしている)
+              const neighborLinks = getLinks(neighbor.content);
+              neighborLinks.forEach(link => {
+                  if (link === currentTitle) return; // 自分への戻りリンクは除外
+                  if (link === neighbor.title) return; // 自己参照は除外
+
+                  let target = activeAllNotes.find(n => n.title === link);
+                  if (!target) {
+                       // 2-hop先のGhost
+                       target = {
+                           id: `ghost-via-${neighbor.id}-${link}`,
+                           title: link,
+                           content: 'Missing Note',
+                           isGhost: true,
+                           folderId: null,
+                           updatedAt: Date.now(),
+                           createdAt: Date.now(),
+                           isBookmarked: false
+                       };
+                  }
+
+                  // 自分自身でなければリストに追加
+                  if (target.id !== currentId) {
+                      relatedNotes.push(target);
+                  }
+              });
+
+              // パターン2: C -> Neighbor (CがNeighborへリンクしている)
+              const incoming = activeAllNotes.filter(n => {
+                  if (n.id === currentId) return false;
+                  if (n.id === neighbor.id) return false;
+                  return getLinks(n.content).includes(neighbor.title);
+              });
+              relatedNotes.push(...incoming);
+          }
+
+          if (relatedNotes.length > 0) {
+              // Hub内のノートも重複排除し、更新順にしておく
+              const unique = relatedNotes
+                  .filter((n, i, self) => i === self.findIndex(s => s.title === n.title))
+                  .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+              
+              if (unique.length > 0) {
+                  hubs[neighbor.title] = unique;
+              }
           }
       });
 
       return {
-          direct: directNotes,
+          direct: sortedDirectNotes,
           hubs: hubs
       };
   }, [note.content, note.title, allNotes, note.id]);
