@@ -746,8 +746,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         // ブラウザの「戻る/進む」やスクロールを防ぐ
         if (e.cancelable) e.preventDefault();
 
-        // 感度調整: 16pxにつき1文字移動
-        const charsMove = Math.round(deltaX / 16);
+        // 感度調整: 12pxにつき1文字移動
+        const charsMove = Math.round(deltaX / 12);
         const newPos = Math.max(0, Math.min(localContent.length, touchCursorRef.current.startSelection + charsMove));
 
         if (textareaRef.current.selectionStart !== newPos) {
