@@ -288,6 +288,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   } | null>(null);
 
   const isLinkClickRef = useRef(false);
+  const touchCursorRef = useRef<{ startX: number; startY: number; startSelection: number; active: boolean } | null>(null);
 
   const lastHighlightRef = useRef<any>(null);
 
@@ -702,6 +703,67 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         setCurrentLineIndex(line);
         checkAutocomplete(pos, localContent);
     }
+  };
+
+  // タッチ開始時の座標とカーソル位置を記録
+  const handleTouchStart = (e: React.TouchEvent<HTMLTextAreaElement>) => {
+    if (e.touches.length !== 1 || !textareaRef.current) return;
+    const touch = e.touches[0];
+    touchCursorRef.current = {
+        startX: touch.clientX,
+        startY: touch.clientY,
+        startSelection: textareaRef.current.selectionStart,
+        active: false // まだスワイプ動作とは確定していない
+    };
+  };
+
+  // タッチ移動時の計算（横移動ならカーソル操作、縦ならスクロール）
+  const handleTouchMove = (e: React.TouchEvent<HTMLTextAreaElement>) => {
+    if (!touchCursorRef.current || !textareaRef.current) return;
+
+    const touch = e.touches[0];
+    const deltaX = touch.clientX - touchCursorRef.current.startX;
+    const deltaY = touch.clientY - touchCursorRef.current.startY;
+
+    // まだカーソルモードになっていない場合、判定を行う
+    if (!touchCursorRef.current.active) {
+        // 横移動が10px以上、かつ縦移動よりも明らかに大きい場合、カーソルモードとみなす
+        if (Math.abs(deltaX) > 10 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+            touchCursorRef.current.active = true;
+        } else if (Math.abs(deltaY) > 10) {
+            // 縦移動が大きい場合はスクロールとみなし、追跡をキャンセル
+            touchCursorRef.current = null;
+            return;
+        }
+    }
+
+    // カーソルモード中の処理
+    if (touchCursorRef.current?.active) {
+        // ブラウザの「戻る/進む」やスクロールを防ぐ
+        if (e.cancelable) e.preventDefault();
+
+        // 感度調整: 8pxにつき1文字移動
+        const charsMove = Math.round(deltaX / 8);
+        const newPos = Math.max(0, Math.min(localContent.length, touchCursorRef.current.startSelection + charsMove));
+
+        if (textareaRef.current.selectionStart !== newPos) {
+            textareaRef.current.setSelectionRange(newPos, newPos);
+            
+            // UI更新（行ハイライトなど）
+            const line = localContent.substring(0, newPos).split('\n').length - 1;
+            setCurrentLineIndex(line);
+            setCursorIndex(newPos);
+            
+            // 選択メニューなどを閉じる
+            setSelectionMenu(null);
+        }
+    }
+  };
+
+  // タッチ終了時のクリーンアップ
+  const handleTouchEnd = (e: React.TouchEvent<HTMLTextAreaElement>) => {
+    touchCursorRef.current = null;
+    handleMouseUp(); // 既存のhandleMouseUp（オートコンプリートチェック等）も呼ぶ
   };
 
   const handleWrapText = (wrapper: string) => {
@@ -1379,7 +1441,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 onMouseMove={handleMouseMove}
                 onMouseLeave={() => { if(textareaRef.current) textareaRef.current.style.cursor = 'text'; }}
                 onMouseUp={handleMouseUp}
-                onTouchEnd={handleMouseUp}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
                 onKeyDown={handleKeyDown}
                 onKeyUp={handleKeyUp}
                 onBlur={() => setSelectionMenu(null)}
