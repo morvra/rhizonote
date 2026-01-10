@@ -27,6 +27,7 @@ const LS_KEY_UI_SETTINGS = 'rhizonote_ui_settings';
 const LS_KEY_DAILY_PREFS = 'rhizonote_daily_prefs';
 const LS_KEY_DELETED_PATHS = 'rhizonote_deleted_paths';
 const LS_KEY_PENDING_RENAMES = 'rhizonote_pending_renames';
+const LS_KEY_UNSYNCED_IDS = 'rhizonote_unsynced_ids';
 
 // Simple date formatter
 const formatDate = (date: Date, format: string) => {
@@ -191,8 +192,30 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [syncMessage, setSyncMessage] = useState('');
 
-  // 未同期の変更を追跡
-  const unsyncedNoteIds = useRef<Set<string>>(new Set());
+  // 未同期の変更を追跡 (Initialize from localStorage)
+  // Use a nullable ref for initialization check to avoid TS errors
+  const unsyncedNoteIdsRef = useRef<Set<string> | null>(null);
+  if (unsyncedNoteIdsRef.current === null) {
+      try {
+          const saved = localStorage.getItem(LS_KEY_UNSYNCED_IDS);
+          unsyncedNoteIdsRef.current = saved ? new Set(JSON.parse(saved)) : new Set<string>();
+      } catch {
+          unsyncedNoteIdsRef.current = new Set<string>();
+      }
+  }
+  // Cast to non-null for usage
+  const unsyncedNoteIds = unsyncedNoteIdsRef as React.MutableRefObject<Set<string>>;
+
+  // Helper to update unsynced IDs and persist
+  const addUnsyncedId = (id: string) => {
+      unsyncedNoteIds.current.add(id);
+      localStorage.setItem(LS_KEY_UNSYNCED_IDS, JSON.stringify(Array.from(unsyncedNoteIds.current)));
+  };
+
+  const clearUnsyncedIds = () => {
+      unsyncedNoteIds.current.clear();
+      localStorage.removeItem(LS_KEY_UNSYNCED_IDS);
+  };
   
   // 最終編集時刻を追跡（自動同期の抑制に使用）
   const lastEditTimeRef = useRef<number>(0);
@@ -480,7 +503,7 @@ export default function App() {
               setDeletedPaths([]);
               setPendingRenames([]);
               
-              unsyncedNoteIds.current.clear();
+              clearUnsyncedIds();
               setSyncStatus('success');
               setSyncMessage(`Synced at ${new Date().toLocaleTimeString()}. ${data.syncLog.length} changes.`);
           }
@@ -679,7 +702,7 @@ export default function App() {
 
       const newContent = lines.join('\n');
       await db.notes.update(noteId, { content: newContent, updatedAt: Date.now() });
-      unsyncedNoteIds.current.add(noteId);
+      addUnsyncedId(noteId);
   };
 
   const openNote = (id: string) => {
@@ -729,7 +752,7 @@ export default function App() {
     
     await db.notes.add(newNote);
     
-    unsyncedNoteIds.current.add(newNote.id);
+    addUnsyncedId(newNote.id);
     
     openNote(newNote.id);
     setMobileMenuOpen(false); 
@@ -747,7 +770,7 @@ export default function App() {
         createdAt: Date.now(),
     };
     await db.notes.add(newNote);
-    unsyncedNoteIds.current.add(newNote.id);
+    addUnsyncedId(newNote.id);
   };
 
   const handleOpenDailyNote = async () => {
@@ -772,7 +795,7 @@ export default function App() {
             createdAt: Date.now(),
         };
         await db.notes.add(newNote);
-        unsyncedNoteIds.current.add(newNote.id);
+        addUnsyncedId(newNote.id);
         openNote(newNote.id);
     }
     setMobileMenuOpen(false);
@@ -877,7 +900,7 @@ export default function App() {
             await db.notes.bulkUpdate(affectedNotes.map(n => ({ key: n.id, changes: { deletedAt: now, updatedAt: now } })));
             
             // Sync tracking
-            affectedNotes.forEach(n => unsyncedNoteIds.current.add(n.id));
+            affectedNotes.forEach(n => addUnsyncedId(n.id));
 
             // Close affected panes
             const deletedNoteIds = affectedNotes.map(n => n.id);
@@ -896,7 +919,7 @@ export default function App() {
         message: `Move note "${title}" to trash?`,
         onConfirm: async () => {
             const now = Date.now();
-            unsyncedNoteIds.current.add(id);
+            addUnsyncedId(id);
             await db.notes.update(id, { deletedAt: now, updatedAt: now });
             setPanes(prev => prev.map(paneId => paneId === id ? null : paneId));
             setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} });
@@ -931,7 +954,7 @@ export default function App() {
   };
 
   const handleRestoreNote = async (id: string) => {
-      unsyncedNoteIds.current.add(id);
+      addUnsyncedId(id);
       await db.notes.update(id, { deletedAt: undefined, updatedAt: Date.now() });
   };
 
@@ -944,14 +967,14 @@ export default function App() {
       const affectedNotes = notes.filter(n => n.folderId && allAffectedFolderIds.includes(n.folderId));
       await db.notes.bulkUpdate(affectedNotes.map(n => ({ key: n.id, changes: { deletedAt: undefined, updatedAt: Date.now() } })));
       
-      affectedNotes.forEach(n => unsyncedNoteIds.current.add(n.id));
+      affectedNotes.forEach(n => addUnsyncedId(n.id));
   };
 
   const handleToggleBookmark = async (id: string) => {
       const note = notes.find(n => n.id === id);
       if (!note) return;
       
-      unsyncedNoteIds.current.add(id);
+      addUnsyncedId(id);
       
       if (note.isBookmarked) {
           await db.notes.update(id, { isBookmarked: false, bookmarkOrder: undefined });
@@ -1003,7 +1026,7 @@ export default function App() {
             }
     }
 
-    unsyncedNoteIds.current.add(id);
+    addUnsyncedId(id);
 
     await db.notes.update(id, { ...updates, updatedAt: Date.now() });
   };
@@ -1055,7 +1078,7 @@ export default function App() {
       
       await (db as any).transaction('rw', db.notes, async () => {
           await Promise.all(notesToUpdate.map(n => {
-              unsyncedNoteIds.current.add(n.id);
+              addUnsyncedId(n.id);
               return db.notes.update(n.id, {
                   content: n.content.replace(regex, newLink),
                   updatedAt: Date.now()
@@ -1080,7 +1103,7 @@ export default function App() {
               createdAt: Date.now()
           };
           await db.notes.add(newNote);
-          unsyncedNoteIds.current.add(newNote.id);
+          addUnsyncedId(newNote.id);
           openNote(newNote.id);
       }
   };
