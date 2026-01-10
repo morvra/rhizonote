@@ -365,26 +365,26 @@ export default function App() {
       const allNotes = await db.notes.toArray();
       const allFolders = await db.folders.toArray();
 
-      const expiredNotes = allNotes.filter(n => n.deletedAt && (now - n.deletedAt > THIRTY_DAYS_MS));
-      const expiredFolders = allFolders.filter(f => f.deletedAt && (now - f.deletedAt > THIRTY_DAYS_MS));
+      const expiredNotes = allNotes.filter((n: Note) => n.deletedAt && (now - n.deletedAt > THIRTY_DAYS_MS));
+      const expiredFolders = allFolders.filter((f: Folder) => f.deletedAt && (now - f.deletedAt > THIRTY_DAYS_MS));
 
       if (expiredNotes.length === 0 && expiredFolders.length === 0) return;
 
       const newDeletedPaths = [...deletedPaths];
 
       // Queue paths for permanent deletion
-      expiredNotes.forEach(n => {
+      expiredNotes.forEach((n: Note) => {
           newDeletedPaths.push(getNotePath(n.title, n.folderId, allFolders));
       });
-      expiredFolders.forEach(f => {
+      expiredFolders.forEach((f: Folder) => {
           newDeletedPaths.push(getFolderPath(f.id, allFolders));
       });
 
       setDeletedPaths(newDeletedPaths);
 
       // Delete from DB
-      await db.notes.bulkDelete(expiredNotes.map(n => n.id));
-      await db.folders.bulkDelete(expiredFolders.map(f => f.id));
+      await db.notes.bulkDelete(expiredNotes.map((n: Note) => n.id));
+      await db.folders.bulkDelete(expiredFolders.map((f: Folder) => f.id));
   };
 
   const authCodeProcessed = useRef(false);
@@ -590,7 +590,7 @@ export default function App() {
   // Extract tasks
   const allTasks = useMemo<NoteTasks[]>(() => {
       const result: NoteTasks[] = [];
-      notes.filter(n => !n.deletedAt).forEach(note => {
+      notes.filter((n: Note) => !n.deletedAt).forEach((note: Note) => {
           const noteTasks: ExtractedTask[] = [];
           note.content.split('\n').forEach((line, idx) => {
               const match = line.match(/^(\s*)(-\s\[([ x])\]\s)(.*)/);
@@ -1340,9 +1340,9 @@ export default function App() {
     ];
 
     const bookmarkCommands: CommandItem[] = notes
-        .filter(n => n.isBookmarked && !n.deletedAt)
-        .sort((a, b) => (a.bookmarkOrder || 0) - (b.bookmarkOrder || 0))
-        .map(n => ({
+        .filter((n: Note) => n.isBookmarked && !n.deletedAt)
+        .sort((a: Note, b: Note) => (a.bookmarkOrder || 0) - (b.bookmarkOrder || 0))
+        .map((n: Note) => ({
             id: `bookmark-${n.id}`,
             label: n.title,
             icon: <Bookmark size={16} />,
@@ -1773,7 +1773,7 @@ export default function App() {
                             className="w-full bg-gray-100 dark:bg-slate-950 text-slate-800 dark:text-slate-200 rounded p-2 text-sm border border-gray-300 dark:border-slate-800 focus:border-indigo-500 focus:outline-none appearance-none"
                         >
                             <option value="">Root (No Folder)</option>
-                            {folders.filter(f => !f.deletedAt).map(f => (
+                            {folders.filter((f: Folder) => !f.deletedAt).map((f: Folder) => (
                                 <option key={f.id} value={f.id}>{f.name}</option>
                             ))}
                         </select>
