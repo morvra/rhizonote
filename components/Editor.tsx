@@ -689,6 +689,55 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const target = e.currentTarget;
+    // --- 太字 (Ctrl+B / Cmd+B) ---
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        const start = target.selectionStart;
+        const end = target.selectionEnd;
+        
+        // テキストが選択されている場合のみ実行
+        if (start !== end) {
+            const text = target.value.substring(start, end);
+            const wrapper = '**';
+            
+            // 前後に ** を追加して更新
+            const newValue = target.value.substring(0, start) + wrapper + text + wrapper + target.value.substring(end);
+            onUpdate(note.id, { content: newValue });
+            
+            // 更新後に選択範囲を維持するための処理
+            // 文字数が4文字（**と**）増えるため、選択範囲も調整します
+            pendingSelectionRef.current = { 
+                start: start, 
+                end: end + 4 
+            };
+        }
+        return;
+    }
+
+    // --- 斜体 (Ctrl+I / Cmd+I) ---
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'i') {
+        e.preventDefault();
+        const start = target.selectionStart;
+        const end = target.selectionEnd;
+        
+        // テキストが選択されている場合のみ実行
+        if (start !== end) {
+            const text = target.value.substring(start, end);
+            const wrapper = '*';
+            
+            // 前後に * を追加して更新
+            const newValue = target.value.substring(0, start) + wrapper + text + wrapper + target.value.substring(end);
+            onUpdate(note.id, { content: newValue });
+            
+            // 更新後に選択範囲を維持するための処理
+            // 文字数が2文字（*と*）増えるため、選択範囲も調整します
+            pendingSelectionRef.current = { 
+                start: start, 
+                end: end + 2 
+            };
+        }
+        return;
+    }
     if ((e.metaKey || e.ctrlKey) && e.key === '[') {
         const start = target.selectionStart;
         const end = target.selectionEnd;
