@@ -192,6 +192,38 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const [isMobile, setIsMobile] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
 
+  // -- Content State Management --
+  // We use local state for the textarea to prevent cursor jumping due to async DB updates/re-renders
+  const [localContent, setLocalContent] = useState(note.content);
+  const [originalTitle, setOriginalTitle] = useState(note.title);
+  const lastEditTimeRef = useRef<number>(0);
+  const prevNoteIdRef = useRef(note.id);
+
+  // If the note ID changes, we must reset the local content immediately (during render) to avoid showing old content
+  if (prevNoteIdRef.current !== note.id) {
+      prevNoteIdRef.current = note.id;
+      setOriginalTitle(note.title);
+      setLocalContent(note.content);
+  }
+
+  // Handle external updates (e.g. Sync) to the *same* note
+  useEffect(() => {
+      // If content is different and we haven't edited locally recently (buffer for debounce/lag)
+      if (note.id === prevNoteIdRef.current && note.content !== localContent) {
+          const timeSinceEdit = Date.now() - lastEditTimeRef.current;
+          if (timeSinceEdit > 2000) {
+              setLocalContent(note.content);
+          }
+      }
+  }, [note.content, note.id]);
+
+  // Helper to update both local state and persist to DB
+  const updateContent = (newContent: string) => {
+      setLocalContent(newContent);
+      lastEditTimeRef.current = Date.now();
+      onUpdate(note.id, { content: newContent });
+  };
+
   // Markdown記号を除去して文字数をカウントする関数
   const getCleanCharCount = (text: string) => {
     return text
@@ -255,13 +287,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     showBelow?: boolean;
   } | null>(null);
 
-  const [originalTitle, setOriginalTitle] = useState(note.title);
   const isLinkClickRef = useRef(false);
-  const prevNoteIdRef = useRef(note.id);
-  if (prevNoteIdRef.current !== note.id) {
-      prevNoteIdRef.current = note.id;
-      setOriginalTitle(note.title);
-  }
 
   const lastHighlightRef = useRef<any>(null);
 
@@ -274,7 +300,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 if (lineEl) {
                     lineEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
                     if (textareaRef.current) {
-                        const lines = note.content.split('\n');
+                        const lines = localContent.split('\n');
                         let charIndex = 0;
                         for(let i=0; i<highlightedLine.lineIndex; i++) {
                             charIndex += (lines[i]?.length || 0) + 1; 
@@ -287,7 +313,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
              }
         }, 50);
     }
-  }, [highlightedLine, note.id, note.content]);
+  }, [highlightedLine, note.id, localContent]);
 
 
   const linkedNotesCount = useMemo(() => {
@@ -297,14 +323,14 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     return allNotes.filter(n => n.id !== note.id && !n.deletedAt && n.content.match(regex)).length;
   }, [note.title, originalTitle, allNotes, note.id]);
 
-  const networkData = useMemo(() => {
+  const networkData = useMemo<{ direct: Note[]; hubs: Record<string, Note[]> }>(() => {
       const activeAllNotes = allNotes.filter(n => !n.deletedAt);
       const currentTitle = note.title;
       const currentId = note.id;
       const getLinks = (content: string) => extractLinks(content);
 
       // 1. Outgoing (本文に出てくる順序) のリストを作成
-      const rawLinks = getLinks(note.content); // リンクテキストの配列（出現順）
+      const rawLinks = getLinks(localContent); // リンクテキストの配列（出現順）
       const outgoingNotes: Note[] = [];
       const seenIds = new Set<string>(); // 重復防止用
       seenIds.add(currentId); // 自分自身は除外
@@ -423,7 +449,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
           direct: sortedDirectNotes,
           hubs: hubs
       };
-  }, [note.content, note.title, allNotes, note.id]);
+  }, [localContent, note.title, allNotes, note.id]);
 
   const linkCandidates = useMemo(() => {
     // 1. まずは既存のノートを候補に入れる
@@ -483,7 +509,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 const lineEl = backdropRef.current.querySelector(`[data-line="${scrollLineIndex}"]`);
                 if (lineEl) lineEl.scrollIntoView({ block: 'nearest' });
             }
-            const line = note.content.substring(0, start).split('\n').length - 1;
+            const line = localContent.substring(0, start).split('\n').length - 1;
             setCurrentLineIndex(line);
             prevSelectionRef.current = start;
             pendingSelectionRef.current = null;
@@ -492,7 +518,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             textareaRef.current.setSelectionRange(pendingCursorRef.current, pendingCursorRef.current);
             const pos = pendingCursorRef.current;
             prevSelectionRef.current = pos;
-            const line = note.content.substring(0, pos).split('\n').length - 1;
+            const line = localContent.substring(0, pos).split('\n').length - 1;
             setCurrentLineIndex(line);
             pendingCursorRef.current = null;
         }
@@ -503,7 +529,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       if (textareaRef.current) {
           const pos = textareaRef.current.selectionStart;
           prevSelectionRef.current = pos;
-          const line = note.content.substring(0, pos).split('\n').length - 1;
+          const line = localContent.substring(0, pos).split('\n').length - 1;
           setCurrentLineIndex(line);
       }
   };
@@ -541,7 +567,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newVal = e.target.value;
     const newCursorPos = e.target.selectionStart;
-    onUpdate(note.id, { content: newVal });
+    
+    updateContent(newVal);
+    
     setCursorIndex(newCursorPos);
     prevSelectionRef.current = newCursorPos;
     const line = newVal.substring(0, newCursorPos).split('\n').length - 1;
@@ -624,7 +652,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     const start = textareaRef.current.selectionStart;
     const end = textareaRef.current.selectionEnd;
     if (start !== end) {
-        const text = note.content.substring(start, end);
+        const text = localContent.substring(start, end);
         let top = 0;
         let left = 0;
         const coords = measureSelection(start, end);
@@ -670,9 +698,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     updateSelectionMenu();
     if (textareaRef.current) {
         const pos = textareaRef.current.selectionStart;
-        const line = note.content.substring(0, pos).split('\n').length - 1;
+        const line = localContent.substring(0, pos).split('\n').length - 1;
         setCurrentLineIndex(line);
-        checkAutocomplete(pos, note.content);
+        checkAutocomplete(pos, localContent);
     }
   };
 
@@ -686,8 +714,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         prefix = '[[';
         suffix = ']]';
     }
-    const newValue = note.content.substring(0, start) + prefix + text + suffix + note.content.substring(end);
-    onUpdate(note.id, { content: newValue });
+    const newValue = localContent.substring(0, start) + prefix + text + suffix + localContent.substring(end);
+    updateContent(newValue);
     setSelectionMenu(null);
     if(textareaRef.current) {
         textareaRef.current.focus();
@@ -704,8 +732,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     content += `\n\nfrom [[${note.title}]]`;
     if (!title) return;
     onCreateNoteWithContent(title, content);
-    const newValue = note.content.substring(0, start) + `[[${title}]]` + note.content.substring(end);
-    onUpdate(note.id, { content: newValue });
+    const newValue = localContent.substring(0, start) + `[[${title}]]` + localContent.substring(end);
+    updateContent(newValue);
     setSelectionMenu(null);
     if(textareaRef.current) {
         textareaRef.current.focus();
@@ -717,7 +745,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     updateSelectionMenu();
     const target = e.target as HTMLTextAreaElement;
     const currentClickIndex = target.selectionStart;
-    const content = note.content;
+    const content = localContent;
     const lineStart = content.lastIndexOf('\n', currentClickIndex - 1) + 1;
     let lineEnd = content.indexOf('\n', currentClickIndex);
     if (lineEnd === -1) lineEnd = content.length;
@@ -734,7 +762,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             const charIndex = lineStart + fullPrefixLen - 2;
             const newContent = content.slice(0, charIndex) + newState + content.slice(charIndex + 1);
             pendingCursorRef.current = currentClickIndex;
-            onUpdate(note.id, { content: newContent });
+            updateContent(newContent);
             updateLineTracking(); 
             return;
         }
@@ -758,7 +786,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             
             // 前後に ** を追加して更新
             const newValue = target.value.substring(0, start) + wrapper + text + wrapper + target.value.substring(end);
-            onUpdate(note.id, { content: newValue });
+            updateContent(newValue);
             
             // 更新後に選択範囲を維持するための処理
             // 文字数が4文字（**と**）増えるため、選択範囲も調整します
@@ -783,7 +811,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             
             // 前後に * を追加して更新
             const newValue = target.value.substring(0, start) + wrapper + text + wrapper + target.value.substring(end);
-            onUpdate(note.id, { content: newValue });
+            updateContent(newValue);
             
             // 更新後に選択範囲を維持するための処理
             // 文字数が2文字（*と*）増えるため、選択範囲も調整します
@@ -802,7 +830,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             e.stopPropagation(); 
             const text = target.value.substring(start, end);
             const newValue = target.value.substring(0, start) + `[[${text}]]` + target.value.substring(end);
-            onUpdate(note.id, { content: newValue });
+            updateContent(newValue);
             pendingCursorRef.current = end + 4; 
             return;
         }
@@ -812,7 +840,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         const start = target.selectionStart;
         const end = target.selectionEnd;
         if (start !== end) {
-            const text = note.content.substring(start, end);
+            const text = localContent.substring(start, end);
             if (!onCreateNoteWithContent) return;
             const lines = text.split('\n');
             const title = lines[0].trim();
@@ -820,9 +848,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             content += `\n\nfrom [[${note.title}]]`;
             if (title) {
                  onCreateNoteWithContent(title, content);
-                 const newValue = note.content.substring(0, start) + `[[${title}]]` + note.content.substring(end);
+                 const newValue = localContent.substring(0, start) + `[[${title}]]` + localContent.substring(end);
                  pendingCursorRef.current = start + title.length + 4;
-                 onUpdate(note.id, { content: newValue });
+                 updateContent(newValue);
                  setSelectionMenu(null); 
             }
         }
@@ -864,7 +892,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             }
         }
         const newValue = value.slice(0, lineStart) + newLine + value.slice(lineEnd);
-        onUpdate(note.id, { content: newValue });
+        updateContent(newValue);
         pendingCursorRef.current = newPos;
         return;
     }
@@ -888,7 +916,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             lines.splice(startLineIndex, blockToMove.length);
             lines.splice(startLineIndex - 1, 0, ...blockToMove);
             const newContent = lines.join('\n');
-            onUpdate(note.id, { content: newContent });
+            updateContent(newContent);
             const shiftAmount = -(lineToMoveDown.length + 1);
             pendingSelectionRef.current = { start: start + shiftAmount, end: end + shiftAmount, scrollLineIndex: startLineIndex - 1 };
         } 
@@ -898,7 +926,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
              lines.splice(startLineIndex, blockToMove.length);
              lines.splice(startLineIndex + 1, 0, ...blockToMove);
              const newContent = lines.join('\n');
-             onUpdate(note.id, { content: newContent });
+             updateContent(newContent);
              const shiftAmount = lineToMoveUp.length + 1;
              pendingSelectionRef.current = { start: start + shiftAmount, end: end + shiftAmount, scrollLineIndex: endLineIndex + 1 };
         }
@@ -934,7 +962,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             const newBlock = newLines.join('\n');
             const newValue = value.substring(0, startLineStart) + newBlock + value.substring(endLineEnd);
 
-            onUpdate(note.id, { content: newValue });
+            updateContent(newValue);
 
             if (start === end) {
                 // 選択なし（カーソルのみ）：カーソル位置を調整して選択はしない
@@ -954,7 +982,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             if (start === end) {
                 // 選択なし（カーソルのみ）：行頭にスペースを挿入する
                 const newValue = value.substring(0, startLineStart) + '  ' + value.substring(startLineStart);
-                onUpdate(note.id, { content: newValue });
+                updateContent(newValue);
                 pendingCursorRef.current = start + 2;
                 return;
             }
@@ -964,7 +992,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             const newBlock = newLines.join('\n');
             const newValue = value.substring(0, startLineStart) + newBlock + value.substring(endLineEnd);
             
-            onUpdate(note.id, { content: newValue });
+            updateContent(newValue);
             
             // 選択範囲を行全体に広げて維持する
             pendingSelectionRef.current = {
@@ -997,7 +1025,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         if (currentLine.trim() === fullPrefix.trim()) {
             const newValue = value.slice(0, currentLineStart) + value.slice(start);
             pendingCursorRef.current = currentLineStart;
-            onUpdate(note.id, { content: newValue });
+            updateContent(newValue);
         } else {
             let nextPrefix = basePrefix;
             const numMatch = basePrefix.match(/^(\s*)(\d+)\.\s/);
@@ -1008,7 +1036,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             if (taskMatch) nextPrefix = nextPrefix.trimEnd() + ' [ ] ';
             const newValue = value.slice(0, start) + '\n' + nextPrefix + value.slice(start);
             pendingCursorRef.current = start + 1 + nextPrefix.length;
-            onUpdate(note.id, { content: newValue });
+            updateContent(newValue);
         }
       }
     }
@@ -1018,18 +1046,18 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     updateLineTracking();
     updateSelectionMenu();
     const target = e.target as HTMLTextAreaElement;
-    checkAutocomplete(target.selectionStart, note.content);
+    checkAutocomplete(target.selectionStart, localContent);
   };
 
   const insertWikiLink = (title: string) => {
     if (!textareaRef.current) return;
-    const value = note.content;
+    const value = localContent;
     const textBeforeCursor = value.slice(0, cursorIndex);
     const lastOpenBracket = textBeforeCursor.lastIndexOf('[[');
     if (lastOpenBracket !== -1) {
       const newValue = value.slice(0, lastOpenBracket) + `[[${title}]]` + value.slice(cursorIndex);
       pendingCursorRef.current = lastOpenBracket + 2 + title.length + 2;
-      onUpdate(note.id, { content: newValue });
+      updateContent(newValue);
       setShowPopup(false);
     }
   };
@@ -1175,7 +1203,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   };
 
   const handlePreviewTaskToggle = (taskIndex: number) => {
-    const lines = note.content.split('\n');
+    const lines = localContent.split('\n');
     let currentTaskCount = 0;
     let inCodeBlock = false;
     const newLines = lines.map(line => {
@@ -1197,7 +1225,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         }
         return line;
     });
-    onUpdate(note.id, { content: newLines.join('\n') });
+    updateContent(newLines.join('\n'));
   };
 
   const handlePreviewClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -1277,13 +1305,13 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                                         <div className="flex justify-between items-center">
                                             <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Characters</span>
                                             <span className="text-indigo-600 dark:text-indigo-400 font-bold font-mono">
-                                                {getCleanCharCount(note.content).toLocaleString()}
+                                                {getCleanCharCount(localContent).toLocaleString()}
                                             </span>
                                         </div>
                                         <div className="flex justify-between items-center mt-1">
                                             <span className="text-xs text-slate-400">Raw Length</span>
                                             <span className="text-slate-500 dark:text-slate-500 text-xs font-mono">
-                                                {note.content.length.toLocaleString()}
+                                                {localContent.length.toLocaleString()}
                                             </span>
                                         </div>
                                     </div>
@@ -1338,12 +1366,12 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                     style={{ fontSize: `${fontSize}px`, lineHeight: 1.6 }}
                     aria-hidden="true"
                 >
-                    {renderBackdrop(note.content, currentLineIndex)}
+                    {renderBackdrop(localContent, currentLineIndex)}
                 </div>
 
                 <textarea
                 ref={textareaRef}
-                value={note.content}
+                value={localContent}
                 onChange={handleChange}
                 onClick={handleContentClick}
                 onSelect={updateSelectionMenu}
@@ -1414,7 +1442,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 className="w-full h-full px-8 pt-4 pb-12 prose prose-slate dark:prose-invert max-w-none transition-colors duration-200 flex-1 min-h-[200px] break-words"
                 style={{ fontSize: `${fontSize}px` }}
                 dangerouslySetInnerHTML={renderMarkdown(
-                    note.content, 
+                    localContent, 
                     new Set(allNotes.filter(n => !n.deletedAt).map(n => n.title))
                 )}
                 onClick={handlePreviewClick}

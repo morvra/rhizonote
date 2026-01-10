@@ -6,16 +6,19 @@ import { Note, Folder, SortField, SortDirection, Theme } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS } from './constants';
 import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle, Shuffle, Eye, Bookmark, Terminal } from 'lucide-react';
 import { getDropboxAuthUrl, parseAuthTokenFromUrl, syncDropboxData, getNotePath, getFolderPath, RenameOperation, exchangeCodeForToken } from './utils/dropboxService';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from './db';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 // Local Storage Keys
-const LS_KEY_NOTES = 'rhizonote_notes';
-const LS_KEY_FOLDERS = 'rhizonote_folders';
+const LS_KEY_NOTES = 'rhizonote_notes'; // Deprecated, used for migration
+const LS_KEY_FOLDERS = 'rhizonote_folders'; // Deprecated, used for migration
+const LS_KEY_MIGRATED = 'rhizonote_migrated_v1';
 const LS_KEY_THEME = 'rhizonote_theme';
-const LS_KEY_DB_TOKEN = 'rhizonote_dropbox_token'; // Legacy / Short term
-const LS_KEY_DB_REFRESH_TOKEN = 'rhizonote_dropbox_refresh_token'; // Long term
+const LS_KEY_DB_TOKEN = 'rhizonote_dropbox_token'; 
+const LS_KEY_DB_REFRESH_TOKEN = 'rhizonote_dropbox_refresh_token';
 const LS_KEY_PANES = 'rhizonote_panes';
 const LS_KEY_ACTIVE_PANE = 'rhizonote_active_pane';
 const LS_KEY_SORT = 'rhizonote_sort';
@@ -93,16 +96,46 @@ interface InputModalState {
 }
 
 export default function App() {
-  // Initialize State from LocalStorage or Defaults
-  const [notes, setNotes] = useState<Note[]>(() => {
-      const saved = localStorage.getItem(LS_KEY_NOTES);
-      return saved ? JSON.parse(saved) : INITIAL_NOTES;
-  });
-  const [folders, setFolders] = useState<Folder[]>(() => {
-      const saved = localStorage.getItem(LS_KEY_FOLDERS);
-      return saved ? JSON.parse(saved) : INITIAL_FOLDERS;
-  });
+  // --- Data Layer: Dexie (IndexedDB) ---
+  const notes = useLiveQuery(() => db.notes.toArray()) ?? [];
+  const folders = useLiveQuery(() => db.folders.toArray()) ?? [];
   
+  // Migration Logic: LocalStorage -> IndexedDB
+  useEffect(() => {
+    const migrate = async () => {
+        const isMigrated = localStorage.getItem(LS_KEY_MIGRATED);
+        
+        if (!isMigrated) {
+            // Check for existing LocalStorage data
+            const lsNotesStr = localStorage.getItem(LS_KEY_NOTES);
+            const lsFoldersStr = localStorage.getItem(LS_KEY_FOLDERS);
+            
+            const existingNotes = lsNotesStr ? JSON.parse(lsNotesStr) : [];
+            const existingFolders = lsFoldersStr ? JSON.parse(lsFoldersStr) : [];
+            
+            await (db as any).transaction('rw', db.notes, db.folders, async () => {
+                const notesCount = await db.notes.count();
+                if (notesCount === 0) {
+                    if (existingNotes.length > 0) {
+                        await db.notes.bulkAdd(existingNotes);
+                        await db.folders.bulkAdd(existingFolders);
+                    } else {
+                        // Initialize with default data if totally fresh
+                        await db.notes.bulkAdd(INITIAL_NOTES);
+                        await db.folders.bulkAdd(INITIAL_FOLDERS);
+                    }
+                }
+            });
+            
+            localStorage.setItem(LS_KEY_MIGRATED, 'true');
+            // Clean up old data to free space, but maybe wait a bit in a real app
+            // localStorage.removeItem(LS_KEY_NOTES);
+            // localStorage.removeItem(LS_KEY_FOLDERS);
+        }
+    };
+    migrate();
+  }, []);
+
   // Track deleted paths (notes/folders) for sync deletion
   const [deletedPaths, setDeletedPaths] = useState<string[]>(() => {
       const saved = localStorage.getItem(LS_KEY_DELETED_PATHS);
@@ -116,7 +149,6 @@ export default function App() {
   });
 
   // Helper to queue renames intelligently
-  // If A -> B exists, and we rename B -> C, we update the existing entry to A -> C
   const queueRename = (from: string, to: string) => {
       setPendingRenames(prev => {
           // Check if 'from' is the destination of a previous rename
@@ -229,14 +261,7 @@ export default function App() {
   // Gesture State for Edge Swipe
   const touchStartRef = useRef<{ x: number, y: number } | null>(null);
 
-  // LocalStorage Effects
-  useEffect(() => {
-    localStorage.setItem(LS_KEY_NOTES, JSON.stringify(notes));
-  }, [notes]);
-
-  useEffect(() => {
-    localStorage.setItem(LS_KEY_FOLDERS, JSON.stringify(folders));
-  }, [folders]);
+  // -- LocalStorage Effects (Only for UI/Settings/Tracking) --
 
   useEffect(() => {
       localStorage.setItem(LS_KEY_DELETED_PATHS, JSON.stringify(deletedPaths));
@@ -292,7 +317,7 @@ export default function App() {
       localStorage.setItem(LS_KEY_DAILY_PREFS, JSON.stringify(prefs));
   }, [dailyNoteFormat, dailyNoteFolderId, dailyNoteTemplate]);
 
-  // ブラウザのタブタイトルを更新する
+  // Browser Title
   useEffect(() => {
     const activeId = panes[activePaneIndex];
     const currentNote = notes.find(n => n.id === activeId);
@@ -306,15 +331,19 @@ export default function App() {
 
   // Cleanup expired trash on mount
   useEffect(() => {
-      cleanupExpiredTrash();
-  }, []); // Run once on mount
+      // Small timeout to ensure DB is loaded
+      setTimeout(() => cleanupExpiredTrash(), 1000);
+  }, []); 
 
-  const cleanupExpiredTrash = () => {
+  const cleanupExpiredTrash = async () => {
       const now = Date.now();
       
-      // Find expired items
-      const expiredNotes = notes.filter(n => n.deletedAt && (now - n.deletedAt > THIRTY_DAYS_MS));
-      const expiredFolders = folders.filter(f => f.deletedAt && (now - f.deletedAt > THIRTY_DAYS_MS));
+      // Since `notes` and `folders` in scope might be stale/loading, fetch direct from DB
+      const allNotes = await db.notes.toArray();
+      const allFolders = await db.folders.toArray();
+
+      const expiredNotes = allNotes.filter(n => n.deletedAt && (now - n.deletedAt > THIRTY_DAYS_MS));
+      const expiredFolders = allFolders.filter(f => f.deletedAt && (now - f.deletedAt > THIRTY_DAYS_MS));
 
       if (expiredNotes.length === 0 && expiredFolders.length === 0) return;
 
@@ -322,31 +351,28 @@ export default function App() {
 
       // Queue paths for permanent deletion
       expiredNotes.forEach(n => {
-          newDeletedPaths.push(getNotePath(n.title, n.folderId, folders));
+          newDeletedPaths.push(getNotePath(n.title, n.folderId, allFolders));
       });
       expiredFolders.forEach(f => {
-          newDeletedPaths.push(getFolderPath(f.id, folders));
+          newDeletedPaths.push(getFolderPath(f.id, allFolders));
       });
 
       setDeletedPaths(newDeletedPaths);
 
-      // Remove from state
-      setNotes(prev => prev.filter(n => !n.deletedAt || (now - n.deletedAt <= THIRTY_DAYS_MS)));
-      setFolders(prev => prev.filter(f => !f.deletedAt || (now - f.deletedAt <= THIRTY_DAYS_MS)));
+      // Delete from DB
+      await db.notes.bulkDelete(expiredNotes.map(n => n.id));
+      await db.folders.bulkDelete(expiredFolders.map(f => f.id));
   };
 
-  // Guard against double firing in strict mode
   const authCodeProcessed = useRef(false);
 
-  // Dropbox Auth Check & Code Handling
+  // Dropbox Auth Check
   useEffect(() => {
       const handleAuth = async () => {
-          // Check for Authorization Code (PKCE Flow)
           const urlParams = new URLSearchParams(window.location.search);
           const code = urlParams.get('code');
           
           if (code) {
-              // Prevent double execution
               if (authCodeProcessed.current) return;
               authCodeProcessed.current = true;
 
@@ -376,13 +402,11 @@ export default function App() {
                   setSyncStatus('error');
                   setSyncMessage(`Login failed: ${e.message || 'Unknown error'}`);
               } finally {
-                  // Always clear URL parameters to keep it clean
                   window.history.replaceState({}, document.title, window.location.pathname);
               }
               return;
           }
 
-          // Legacy / Fallback Check
           const legacyToken = parseAuthTokenFromUrl();
           if (legacyToken) {
               setDropboxToken(legacyToken);
@@ -428,22 +452,9 @@ export default function App() {
       setSyncMessage('Syncing changes...');
       
       try {
-          // ✅ Capture latest state at sync time
-          let latestNotes: Note[] = [];
-          let latestFolders: Folder[] = [];
-          
-          // Use functional setState to get current values
-          await new Promise<void>(resolve => {
-              setNotes(current => {
-                  latestNotes = current;
-                  return current;
-              });
-              setFolders(current => {
-                  latestFolders = current;
-                  resolve();
-                  return current;
-              });
-          });
+          // Sync logic needs snapshots
+          const currentNotes = await db.notes.toArray();
+          const currentFolders = await db.folders.toArray();
           
           const auth = {
               accessToken: dropboxToken,
@@ -452,16 +463,20 @@ export default function App() {
 
           const data = await syncDropboxData(
               auth, 
-              latestNotes,
-              latestFolders, 
+              currentNotes,
+              currentFolders, 
               deletedPaths, 
               pendingRenames,
               unsyncedNoteIds.current
           );
           
           if (data) {
-              setNotes(data.notes);
-              setFolders(data.folders);
+              // Update DB with results
+              await (db as any).transaction('rw', db.notes, db.folders, async () => {
+                  await db.notes.bulkPut(data.notes);
+                  await db.folders.bulkPut(data.folders);
+              });
+              
               setDeletedPaths([]);
               setPendingRenames([]);
               
@@ -477,48 +492,30 @@ export default function App() {
       setTimeout(() => { if(syncStatus !== 'error') setSyncStatus('idle'); }, 4000);
   };
 
-  // 同期中フラグと最終同期時刻をRefで管理
   const isSyncingRef = useRef(false);
   const lastSyncTimeRef = useRef<number>(0);
 
-  // Auto-sync on visibility change, blur, and periodic sync
+  // Auto-sync
   useEffect(() => {
       if (!autoSync || (!dropboxToken && !dropboxRefreshToken)) return;
 
       let intervalId: number | undefined;
-      const MIN_SYNC_INTERVAL = 3 * 60 * 1000; // 最低3分間隔（レート制限対策）
+      const MIN_SYNC_INTERVAL = 3 * 60 * 1000; 
 
-      // force=true の場合は、直近の編集や同期間隔を無視して同期を試みる（離脱時用）
       const syncIfNeeded = async (force = false) => {
           const now = Date.now();
           const timeSinceLastSync = now - lastSyncTimeRef.current;
           const timeSinceLastEdit = now - lastEditTimeRef.current;
           
-          // 変更があるか簡易チェック (Refなのでクロージャの影響を受けずに最新の値が見れる)
           const hasChanges = unsyncedNoteIds.current.size > 0;
 
-          // 1. 既に同期中なら何もしない
-          if (isSyncingRef.current) {
-              return;
-          }
+          if (isSyncingRef.current) return;
 
           if (!force) {
-              // 通常時（定期同期・復帰時）のチェック
-              
-              // 執筆中（最後の編集から5秒以内）は自動同期しない
-              if (timeSinceLastEdit < 5000) {
-                  return;
-              }
-              // 最後の同期から3分経っていなければスキップ
-              if (timeSinceLastSync < MIN_SYNC_INTERVAL) {
-                  return;
-              }
+              if (timeSinceLastEdit < 5000) return;
+              if (timeSinceLastSync < MIN_SYNC_INTERVAL) return;
           } else {
-              // 強制時（離脱時）：変更がなければスキップして無駄な通信を防ぐ
-              if (!hasChanges) {
-                  return;
-              }
-              // 変更があるなら、間隔無視で実行へ進む
+              if (!hasChanges) return;
           }
 
           isSyncingRef.current = true;
@@ -535,35 +532,29 @@ export default function App() {
           }
       };
 
-      // 1. ページの表示状態が変わったとき（タブ切り替え、最小化など）
       const handleVisibilityChange = () => {
           if (document.visibilityState === 'visible') {
-              syncIfNeeded(false); // 戻ってきたとき（通常のチェック）
+              syncIfNeeded(false);
           } else if (document.visibilityState === 'hidden') {
-              syncIfNeeded(true);  // 隠れたとき（強制同期）
+              syncIfNeeded(true);
           }
       };
 
-      // 2. ウィンドウのフォーカス状態が変わったとき（アプリ切り替えなど）
-      const handleWindowFocus = () => syncIfNeeded(false); // フォーカス取得（通常のチェック）
-      const handleWindowBlur = () => syncIfNeeded(true);   // フォーカス喪失（強制同期）
+      const handleWindowFocus = () => syncIfNeeded(false);
+      const handleWindowBlur = () => syncIfNeeded(true);
 
-      // 3. 定期的な自動同期（5分ごと）
       intervalId = window.setInterval(() => {
           syncIfNeeded(false);
       }, 5 * 60 * 1000);
 
-      // イベントリスナー登録
       document.addEventListener('visibilitychange', handleVisibilityChange);
       window.addEventListener('focus', handleWindowFocus);
       window.addEventListener('blur', handleWindowBlur);
 
-      // 初回同期
       const initialSyncTimeout = setTimeout(() => {
           syncIfNeeded(false);
       }, 1500);
 
-      // クリーンアップ
       return () => {
           if (intervalId) clearInterval(intervalId);
           clearTimeout(initialSyncTimeout);
@@ -573,10 +564,9 @@ export default function App() {
       };
   }, [autoSync, dropboxToken, dropboxRefreshToken]);
 
-  // Extract all tasks from all notes (Memoized)
+  // Extract tasks
   const allTasks = useMemo<NoteTasks[]>(() => {
       const result: NoteTasks[] = [];
-      // Only show tasks from non-deleted notes
       notes.filter(n => !n.deletedAt).forEach(note => {
           const noteTasks: ExtractedTask[] = [];
           note.content.split('\n').forEach((line, idx) => {
@@ -598,7 +588,6 @@ export default function App() {
       return result;
   }, [notes]);
 
-  // Flattened list for keyboard navigation
   const visibleFlatTasks = useMemo(() => {
       const flat: { note: Note; task: ExtractedTask }[] = [];
       allTasks.forEach(noteGroup => {
@@ -610,14 +599,12 @@ export default function App() {
       return flat;
   }, [allTasks, recentlyCompletedTasks]);
 
-  // Reset selection when modal opens
   useEffect(() => {
       if (showTasks) {
           setTaskSelectedIndex(0);
       }
   }, [showTasks]);
 
-  // Keyboard navigation for tasks
   useEffect(() => {
       if (!showTasks) return;
 
@@ -637,7 +624,6 @@ export default function App() {
               setTaskSelectedIndex(prev => (prev - 1 + visibleFlatTasks.length) % visibleFlatTasks.length);
           } else if (e.key === ' ' && !e.repeat) {
               e.preventDefault();
-              // Toggle selection
               const selected = visibleFlatTasks[taskSelectedIndex];
               if (selected) {
                   handleToggleTaskFromModal(selected.note.id, selected.task.lineIndex, selected.task.isChecked);
@@ -657,7 +643,6 @@ export default function App() {
       return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showTasks, visibleFlatTasks, taskSelectedIndex]);
 
-  // Auto-scroll to selected task
   useEffect(() => {
       if (!showTasks || !taskListRef.current) return;
       const selectedEl = taskListRef.current.querySelector('[data-selected="true"]');
@@ -671,7 +656,7 @@ export default function App() {
       setRecentlyCompletedTasks(new Set());
   };
 
-  const handleToggleTaskFromModal = (noteId: string, lineIndex: number, currentChecked: boolean) => {
+  const handleToggleTaskFromModal = async (noteId: string, lineIndex: number, currentChecked: boolean) => {
       lastEditTimeRef.current = Date.now();
       if (!currentChecked) {
           setRecentlyCompletedTasks((prev: Set<string>) => {
@@ -681,19 +666,20 @@ export default function App() {
           });
       }
 
-      setNotes((prev: Note[]) => prev.map(note => {
-          if (note.id !== noteId) return note;
+      const note = await db.notes.get(noteId);
+      if (!note) return;
 
-          const lines = note.content.split('\n');
-          if (lineIndex >= lines.length) return note; 
+      const lines = note.content.split('\n');
+      if (lineIndex >= lines.length) return; 
 
-          const line = lines[lineIndex];
-          const newStatus = currentChecked ? '[ ]' : '[x]';
-          const newLine = line.replace(/\[([ x])\]/, newStatus);
-          lines[lineIndex] = newLine;
+      const line = lines[lineIndex];
+      const newStatus = currentChecked ? '[ ]' : '[x]';
+      const newLine = line.replace(/\[([ x])\]/, newStatus);
+      lines[lineIndex] = newLine;
 
-          return { ...note, content: lines.join('\n'), updatedAt: Date.now() };
-      }));
+      const newContent = lines.join('\n');
+      await db.notes.update(noteId, { content: newContent, updatedAt: Date.now() });
+      unsyncedNoteIds.current.add(noteId);
   };
 
   const openNote = (id: string) => {
@@ -702,14 +688,12 @@ export default function App() {
         newPanes[activePaneIndex] = id;
         return newPanes;
     });
-    // Update history
     setHistory(prev => {
         const newHistory = [...prev];
         if (!newHistory[activePaneIndex]) {
             newHistory[activePaneIndex] = { stack: [], currentIndex: -1 };
         }
         const paneHist = newHistory[activePaneIndex];
-        // If stack is empty, just push
         if (paneHist.currentIndex === -1) {
              newHistory[activePaneIndex] = { stack: [id], currentIndex: 0 };
         } else {
@@ -731,7 +715,7 @@ export default function App() {
     }
   };
 
-  const handleCreateNote = () => {
+  const handleCreateNote = async () => {
     lastEditTimeRef.current = Date.now();
     const newNote: Note = {
       id: generateId(),
@@ -742,16 +726,16 @@ export default function App() {
       updatedAt: Date.now(),
       createdAt: Date.now(),
     };
-    setNotes((prev: Note[]) => [newNote, ...prev]);
     
-    // 未同期変更をマーク
+    await db.notes.add(newNote);
+    
     unsyncedNoteIds.current.add(newNote.id);
     
     openNote(newNote.id);
     setMobileMenuOpen(false); 
   };
 
-  const handleCreateSpecificNote = (title: string, content: string) => {
+  const handleCreateSpecificNote = async (title: string, content: string) => {
     lastEditTimeRef.current = Date.now();
     const newNote: Note = {
         id: generateId(),
@@ -762,15 +746,15 @@ export default function App() {
         updatedAt: Date.now(),
         createdAt: Date.now(),
     };
-    setNotes((prev: Note[]) => [newNote, ...prev]);
-    
-    // 未同期変更をマーク
+    await db.notes.add(newNote);
     unsyncedNoteIds.current.add(newNote.id);
   };
 
-  const handleOpenDailyNote = () => {
+  const handleOpenDailyNote = async () => {
     const todayTitle = formatDate(new Date(), dailyNoteFormat);
     const targetFolderId = dailyNoteFolderId && folders.find(f => f.id === dailyNoteFolderId) ? dailyNoteFolderId : null;
+    
+    // Check if note exists
     const existingNote = notes.find(n => n.title === todayTitle && n.folderId === targetFolderId && !n.deletedAt);
 
     if (existingNote) {
@@ -787,7 +771,8 @@ export default function App() {
             updatedAt: Date.now(),
             createdAt: Date.now(),
         };
-        setNotes((prev: Note[]) => [newNote, ...prev]);
+        await db.notes.add(newNote);
+        unsyncedNoteIds.current.add(newNote.id);
         openNote(newNote.id);
     }
     setMobileMenuOpen(false);
@@ -807,7 +792,7 @@ export default function App() {
         isOpen: true,
         title: 'New Folder Name',
         value: '',
-        onConfirm: (name) => {
+        onConfirm: async (name) => {
             if (name) {
                 const newFolder = { 
                     id: generateId(), 
@@ -815,7 +800,8 @@ export default function App() {
                     parentId, 
                     createdAt: Date.now() 
                 };
-                setFolders((prev: Folder[]) => [...prev, newFolder]);
+                await db.folders.add(newFolder);
+                
                 if (parentId) {
                     setExpandedFolderIds((prev: string[]) => prev.includes(parentId) ? prev : [...prev, parentId]);
                 }
@@ -842,9 +828,8 @@ export default function App() {
         isOpen: true,
         title: 'Rename Folder',
         value: folder.name,
-        onConfirm: (newName) => {
+        onConfirm: async (newName) => {
             if (newName && newName !== folder.name) {
-                // Queue Rename logic
                 // For folders, getFolderPath uses the *current* state.
                 const oldPath = getFolderPath(id, folders);
                 
@@ -856,7 +841,7 @@ export default function App() {
                     queueRename(oldPath, newPath);
                 }
 
-                setFolders((prev: Folder[]) => prev.map(f => f.id === id ? { ...f, name: newName } : f));
+                await db.folders.update(id, { name: newName });
             }
             setInputModal({ isOpen: false, title: '', value: '', onConfirm: () => {} });
         }
@@ -872,7 +857,6 @@ export default function App() {
       return ids;
   };
 
-  // Modified to "Soft Delete" (Move to Trash)
   const handleDeleteFolder = (id: string) => {
     const folder = folders.find(f => f.id === id);
     const name = folder ? folder.name : 'this folder';
@@ -880,23 +864,23 @@ export default function App() {
     setConfirmModal({
         isOpen: true,
         message: `Move folder "${name}" and its contents to trash?`,
-        onConfirm: () => {
+        onConfirm: async () => {
             const now = Date.now();
             const descendantIds = getDescendantFolderIds(id, folders);
             const allAffectedFolderIds = [id, ...descendantIds];
 
-            setFolders(prev => prev.map(f => 
-                allAffectedFolderIds.includes(f.id) ? { ...f, deletedAt: now } : f
-            ));
+            // Update Folders
+            await db.folders.bulkUpdate(allAffectedFolderIds.map(fid => ({ key: fid, changes: { deletedAt: now } })));
             
-            setNotes(prev => prev.map(n => 
-                (n.folderId && allAffectedFolderIds.includes(n.folderId)) ? { ...n, deletedAt: now, updatedAt: now } : n
-            ));
+            // Update Notes
+            const affectedNotes = notes.filter(n => n.folderId && allAffectedFolderIds.includes(n.folderId));
+            await db.notes.bulkUpdate(affectedNotes.map(n => ({ key: n.id, changes: { deletedAt: now, updatedAt: now } })));
+            
+            // Sync tracking
+            affectedNotes.forEach(n => unsyncedNoteIds.current.add(n.id));
 
             // Close affected panes
-            const deletedNoteIds = notes
-                .filter(n => n.folderId && allAffectedFolderIds.includes(n.folderId))
-                .map(n => n.id);
+            const deletedNoteIds = affectedNotes.map(n => n.id);
             setPanes(prev => prev.map(pid => (pid && deletedNoteIds.includes(pid)) ? null : pid));
 
             setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} });
@@ -904,148 +888,133 @@ export default function App() {
     });
   };
 
-  // Modified to "Soft Delete" (Move to Trash)
   const handleDeleteNote = (id: string) => {
     const noteToDelete = notes.find(n => n.id === id);
     const title = noteToDelete ? noteToDelete.title : 'this note';
     setConfirmModal({
         isOpen: true,
         message: `Move note "${title}" to trash?`,
-        onConfirm: () => {
+        onConfirm: async () => {
             const now = Date.now();
             unsyncedNoteIds.current.add(id);
-            setNotes(prev => prev.map(n => n.id === id ? { ...n, deletedAt: now, updatedAt: now } : n));
+            await db.notes.update(id, { deletedAt: now, updatedAt: now });
             setPanes(prev => prev.map(paneId => paneId === id ? null : paneId));
             setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} });
         }
     });
   };
 
-  const handlePermanentDeleteFolder = (id: string) => {
+  const handlePermanentDeleteFolder = async (id: string) => {
       const descendantIds = getDescendantFolderIds(id, folders);
       const allAffectedFolderIds = [id, ...descendantIds];
       
-      // Queue for deletion
       const newDeletedPaths = [...deletedPaths];
       allAffectedFolderIds.forEach(fid => {
            newDeletedPaths.push(getFolderPath(fid, folders));
       });
-      // Notes in these folders are also implicitly deleted on Dropbox if the parent folder is deleted,
-      // but explicitly adding them is safer if the structure flattened somehow, though for folder deletion simply deleting the root folder path is usually enough.
-      // However, to keep state clean, let's just delete the top folder path.
-      // Wait, getFolderPath depends on state. We must calculate path BEFORE removing from state.
       const topPath = getFolderPath(id, folders);
       setDeletedPaths(prev => [...prev, topPath]);
       
-      setFolders(prev => prev.filter(f => !allAffectedFolderIds.includes(f.id)));
-      setNotes(prev => prev.filter(n => !n.folderId || !allAffectedFolderIds.includes(n.folderId)));
+      // Delete from DB
+      await db.folders.bulkDelete(allAffectedFolderIds);
+      const notesToDelete = notes.filter(n => n.folderId && allAffectedFolderIds.includes(n.folderId)).map(n => n.id);
+      await db.notes.bulkDelete(notesToDelete);
   };
 
-  const handlePermanentDeleteNote = (id: string) => {
+  const handlePermanentDeleteNote = async (id: string) => {
       const note = notes.find(n => n.id === id);
       if (note) {
           const path = getNotePath(note.title, note.folderId, folders);
           setDeletedPaths(prev => [...prev, path]);
-          setNotes(prev => prev.filter(n => n.id !== id));
+          await db.notes.delete(id);
       }
   };
 
-  const handleRestoreNote = (id: string) => {
-      setNotes(prev => prev.map(n => n.id === id ? { ...n, deletedAt: undefined, updatedAt: Date.now() } : n));
+  const handleRestoreNote = async (id: string) => {
+      unsyncedNoteIds.current.add(id);
+      await db.notes.update(id, { deletedAt: undefined, updatedAt: Date.now() });
   };
 
-  const handleRestoreFolder = (id: string) => {
-      // Restore folder and all its contents
+  const handleRestoreFolder = async (id: string) => {
       const descendantIds = getDescendantFolderIds(id, folders);
       const allAffectedFolderIds = [id, ...descendantIds];
 
-      setFolders(prev => prev.map(f => 
-        allAffectedFolderIds.includes(f.id) ? { ...f, deletedAt: undefined } : f
-      ));
+      await db.folders.bulkUpdate(allAffectedFolderIds.map(fid => ({ key: fid, changes: { deletedAt: undefined } })));
       
-      setNotes(prev => prev.map(n => 
-        (n.folderId && allAffectedFolderIds.includes(n.folderId)) ? { ...n, deletedAt: undefined, updatedAt: Date.now() } : n
-      ));
+      const affectedNotes = notes.filter(n => n.folderId && allAffectedFolderIds.includes(n.folderId));
+      await db.notes.bulkUpdate(affectedNotes.map(n => ({ key: n.id, changes: { deletedAt: undefined, updatedAt: Date.now() } })));
+      
+      affectedNotes.forEach(n => unsyncedNoteIds.current.add(n.id));
   };
 
-  const handleToggleBookmark = (id: string) => {
-    setNotes((prev: Note[]) => {
-        const note = prev.find(n => n.id === id);
-        if (!note) return prev;
-        unsyncedNoteIds.current.add(id);
-        if (note.isBookmarked) {
-            return prev.map(n => n.id === id ? { ...n, isBookmarked: false, bookmarkOrder: undefined } : n);
-        } else {
-            const maxOrder = Math.max(0, ...prev.filter(n => n.isBookmarked).map(n => n.bookmarkOrder || 0));
-            return prev.map(n => n.id === id ? { ...n, isBookmarked: true, bookmarkOrder: maxOrder + 1 } : n);
-        }
-    });
+  const handleToggleBookmark = async (id: string) => {
+      const note = notes.find(n => n.id === id);
+      if (!note) return;
+      
+      unsyncedNoteIds.current.add(id);
+      
+      if (note.isBookmarked) {
+          await db.notes.update(id, { isBookmarked: false, bookmarkOrder: undefined });
+      } else {
+          const bookmarkedNotes = notes.filter(n => n.isBookmarked);
+          const maxOrder = Math.max(0, ...bookmarkedNotes.map(n => n.bookmarkOrder || 0));
+          await db.notes.update(id, { isBookmarked: true, bookmarkOrder: maxOrder + 1 });
+      }
   };
 
-  const handleReorderBookmark = (draggedId: string, targetId: string) => {
-    setNotes((prev: Note[]) => {
-        const bookmarked = prev.filter(n => n.isBookmarked).sort((a, b) => (a.bookmarkOrder || 0) - (b.bookmarkOrder || 0));
-        const draggedIndex = bookmarked.findIndex(n => n.id === draggedId);
-        const targetIndex = bookmarked.findIndex(n => n.id === targetId);
+  const handleReorderBookmark = async (draggedId: string, targetId: string) => {
+      const bookmarked = notes.filter(n => n.isBookmarked).sort((a, b) => (a.bookmarkOrder || 0) - (b.bookmarkOrder || 0));
+      const draggedIndex = bookmarked.findIndex(n => n.id === draggedId);
+      const targetIndex = bookmarked.findIndex(n => n.id === targetId);
 
-        if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) return prev;
+      if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) return;
 
-        const item = bookmarked[draggedIndex];
-        const newOrderList = [...bookmarked];
-        newOrderList.splice(draggedIndex, 1);
-        newOrderList.splice(targetIndex, 0, item);
+      const item = bookmarked[draggedIndex];
+      const newOrderList = [...bookmarked];
+      newOrderList.splice(draggedIndex, 1);
+      newOrderList.splice(targetIndex, 0, item);
 
-        const orderMap = new Map();
-        newOrderList.forEach((n, idx) => orderMap.set(n.id, idx));
-
-        return prev.map(n => {
-            if (orderMap.has(n.id)) {
-                return { ...n, bookmarkOrder: orderMap.get(n.id) };
-            }
-            return n;
-        });
-    });
+      // Batch update logic would be ideal here
+      await (db as any).transaction('rw', db.notes, async () => {
+          await Promise.all(newOrderList.map((n, idx) => {
+               return db.notes.update(n.id, { bookmarkOrder: idx });
+          }));
+      });
   };
 
-  const handleUpdateNote = (id: string, updates: Partial<Note>) => {
+  const handleUpdateNote = async (id: string, updates: Partial<Note>) => {
     lastEditTimeRef.current = Date.now();
-    setNotes((prev: Note[]) => {
-        const oldNote = prev.find(n => n.id === id);
-        if (!oldNote) return prev;
-        
-        // Handle Rename/Move: Queue RENAME (Move) instead of Delete+Create
-        if (
-            (updates.title && updates.title !== oldNote.title) || 
-            (updates.folderId !== undefined && updates.folderId !== oldNote.folderId)
-        ) {
-             const oldPath = getNotePath(oldNote.title, oldNote.folderId, folders);
-             
-             // Calculate new path based on updates merging with old state
-             const newTitle = updates.title !== undefined ? updates.title : oldNote.title;
-             const newFolderId = updates.folderId !== undefined ? updates.folderId : oldNote.folderId;
-             const newPath = getNotePath(newTitle, newFolderId, folders);
+    const oldNote = notes.find(n => n.id === id);
+    if (!oldNote) return;
+    
+    // Handle Rename/Move
+    if (
+        (updates.title && updates.title !== oldNote.title) || 
+        (updates.folderId !== undefined && updates.folderId !== oldNote.folderId)
+    ) {
+            const oldPath = getNotePath(oldNote.title, oldNote.folderId, folders);
+            
+            const newTitle = updates.title !== undefined ? updates.title : oldNote.title;
+            const newFolderId = updates.folderId !== undefined ? updates.folderId : oldNote.folderId;
+            const newPath = getNotePath(newTitle, newFolderId, folders);
 
-             if (oldPath !== newPath) {
-                 queueRename(oldPath, newPath);
-             }
-        }
+            if (oldPath !== newPath) {
+                queueRename(oldPath, newPath);
+            }
+    }
 
-        // Mark as unsynced
-        unsyncedNoteIds.current.add(id);
+    unsyncedNoteIds.current.add(id);
 
-        return prev.map(n => n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n);
-    });
+    await db.notes.update(id, { ...updates, updatedAt: Date.now() });
   };
 
   const handleMoveNote = (noteId: string, folderId: string | null) => {
       handleUpdateNote(noteId, { folderId });
   };
 
-  const handleMoveFolder = (folderId: string, parentId: string | null) => {
-      // Prevent circular moves
+  const handleMoveFolder = async (folderId: string, parentId: string | null) => {
       if (folderId === parentId) return;
       
-      // Check if parentId is a descendant of folderId
       const isDescendant = (parent: string | null, target: string): boolean => {
           if (!parent) return false;
           if (parent === target) return true;
@@ -1058,50 +1027,48 @@ export default function App() {
           return;
       }
 
-      setFolders(prev => {
-          const folder = prev.find(f => f.id === folderId);
-          if (!folder) return prev;
-          
-          const oldPath = getFolderPath(folderId, prev);
-          
-          // Simulate state for new path
-          const tempFolders = prev.map(f => f.id === folderId ? { ...f, parentId } : f);
-          const newPath = getFolderPath(folderId, tempFolders);
-          
-          if (oldPath !== newPath) {
-              queueRename(oldPath, newPath);
-          }
-          
-          return prev.map(f => f.id === folderId ? { ...f, parentId } : f);
-      });
+      const folder = folders.find(f => f.id === folderId);
+      if (!folder) return;
+      
+      const oldPath = getFolderPath(folderId, folders);
+      
+      // Simulate state for new path calculation - a bit tricky without state.
+      // We construct a temporary folders array
+      const tempFolders = folders.map(f => f.id === folderId ? { ...f, parentId } : f);
+      const newPath = getFolderPath(folderId, tempFolders);
+      
+      if (oldPath !== newPath) {
+          queueRename(oldPath, newPath);
+      }
+      
+      await db.folders.update(folderId, { parentId });
   };
 
-  const handleRefactorLinks = (oldTitle: string, newTitle: string) => {
+  const handleRefactorLinks = async (oldTitle: string, newTitle: string) => {
       if (oldTitle === newTitle) return;
       
       lastEditTimeRef.current = Date.now();
       const regex = new RegExp(`\\[\\[${oldTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]\\]`, 'g');
       const newLink = `[[${newTitle}]]`;
       
-      setNotes(prev => prev.map(n => {
-          if (n.content.match(regex)) {
+      const notesToUpdate = notes.filter(n => n.content.match(regex));
+      
+      await (db as any).transaction('rw', db.notes, async () => {
+          await Promise.all(notesToUpdate.map(n => {
               unsyncedNoteIds.current.add(n.id);
-              return {
-                  ...n,
+              return db.notes.update(n.id, {
                   content: n.content.replace(regex, newLink),
                   updatedAt: Date.now()
-              };
-          }
-          return n;
-      }));
+              });
+          }));
+      });
   };
   
-  const handleLinkClick = (title: string) => {
+  const handleLinkClick = async (title: string) => {
       const target = notes.find(n => n.title === title && !n.deletedAt);
       if (target) {
           openNote(target.id);
       } else {
-          // Create new note with this title and open it
           lastEditTimeRef.current = Date.now();
           const newNote: Note = {
               id: generateId(),
@@ -1112,7 +1079,7 @@ export default function App() {
               updatedAt: Date.now(),
               createdAt: Date.now()
           };
-          setNotes(prev => [newNote, ...prev]);
+          await db.notes.add(newNote);
           unsyncedNoteIds.current.add(newNote.id);
           openNote(newNote.id);
       }
