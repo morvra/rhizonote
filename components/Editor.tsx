@@ -196,6 +196,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   // -- Content State Management --
   // We use local state for the textarea to prevent cursor jumping due to async DB updates/re-renders
   const [localContent, setLocalContent] = useState(note.content);
+  const [localTitle, setLocalTitle] = useState(note.title);
   const [originalTitle, setOriginalTitle] = useState(note.title);
   const lastEditTimeRef = useRef<number>(0);
   const prevNoteIdRef = useRef(note.id);
@@ -205,18 +206,23 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       prevNoteIdRef.current = note.id;
       setOriginalTitle(note.title);
       setLocalContent(note.content);
+      setLocalTitle(note.title);
   }
 
   // Handle external updates (e.g. Sync) to the *same* note
   useEffect(() => {
       // If content is different and we haven't edited locally recently (buffer for debounce/lag)
-      if (note.id === prevNoteIdRef.current && note.content !== localContent) {
+      if (note.id === prevNoteIdRef.current) {
           const timeSinceEdit = Date.now() - lastEditTimeRef.current;
-          if (timeSinceEdit > 2000) {
+          if (note.content !== localContent && timeSinceEdit > 2000) {
               setLocalContent(note.content);
           }
+          // 外部データとローカルが異なり、かつ直近(2秒以内)で編集していない場合のみ反映
+          if (note.title !== localTitle && timeSinceEdit > 2000) {
+              setLocalTitle(note.title);
+          }
       }
-  }, [note.content, note.id]);
+  }, [note.content, note.title, note.id, localContent, localTitle]);
 
   // Helper to update both local state and persist to DB
   const updateContent = (newContent: string) => {
@@ -1329,9 +1335,13 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       <div className="flex flex-col px-6 py-3 border-b border-gray-200 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-900/50 z-20">
         <div className="flex items-center justify-between">
             <textarea
-                value={note.title}
+                value={localTitle}
                 onChange={(e) => {
-                    onUpdate(note.id, { title: e.target.value });
+                    const newTitle = e.target.value;
+                    setLocalTitle(newTitle);
+                    lastEditTimeRef.current = Date.now();
+                    onUpdate(note.id, { title: newTitle });
+                    // 高さの自動調整
                     e.target.style.height = 'auto';
                     e.target.style.height = e.target.scrollHeight + 'px';
                 }}
