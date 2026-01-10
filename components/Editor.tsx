@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Note } from '../types';
 import WikiLinkPopup from './WikiLinkPopup';
-import { Edit3, Eye, RefreshCw, Bold, Italic, Strikethrough, Code, Link as LinkIcon, FilePlus, Link2, Info } from 'lucide-react';
+import { Edit3, Eye, RefreshCw, Bold, Italic, Strikethrough, Code, Link as LinkIcon, FilePlus, Link2, Info, AlertTriangle, Merge } from 'lucide-react';
 
 interface EditorProps {
   note: Note;
@@ -10,6 +10,7 @@ interface EditorProps {
   onLinkClick: (title: string) => void;
   onRefactorLinks: (oldTitle: string, newTitle: string) => void;
   onCreateNoteWithContent?: (title: string, content: string) => void;
+  onMergeNotes?: (sourceId: string, targetId: string, oldSourceTitle: string) => void;
   fontSize: number;
   isActive?: boolean;
   highlightedLine?: { noteId: string; lineIndex: number } | null;
@@ -183,7 +184,7 @@ const renderMarkdown = (content: string, existingTitles?: Set<string>) => {
     return { __html: html };
 };
 
-const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, onRefactorLinks, onCreateNoteWithContent, fontSize, isActive = true, highlightedLine }) => {
+const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, onRefactorLinks, onCreateNoteWithContent, onMergeNotes, fontSize, isActive = true, highlightedLine }) => {
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -223,6 +224,16 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       lastEditTimeRef.current = Date.now();
       onUpdate(note.id, { content: newContent });
   };
+
+  // Duplicate detection
+  const duplicateNote = useMemo(() => {
+    if (!note.title.trim()) return null;
+    return allNotes.find(n => 
+        n.id !== note.id && 
+        !n.deletedAt && 
+        n.title.trim().toLowerCase() === note.title.trim().toLowerCase()
+    );
+  }, [note.title, allNotes, note.id]);
 
   // Markdown記号を除去して文字数をカウントする関数
   const getCleanCharCount = (text: string) => {
@@ -1404,8 +1415,30 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 </div>
             </div>
         </div>
+
+        {/* Duplicate Warning Banner */}
+        {duplicateNote && (
+            <div className="mt-2 flex items-center justify-between bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800/50 rounded-md px-3 py-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 text-sm">
+                    <AlertTriangle size={16} className="shrink-0" />
+                    <span>
+                        Title already exists in <b>{duplicateNote.title}</b>
+                    </span>
+                </div>
+                {onMergeNotes && (
+                    <button
+                        onClick={() => onMergeNotes(note.id, duplicateNote.id, originalTitle)}
+                        className="flex items-center gap-1.5 px-3 py-1 bg-amber-100 dark:bg-amber-800/50 hover:bg-amber-200 dark:hover:bg-amber-800 text-amber-800 dark:text-amber-200 rounded text-xs font-semibold transition-colors"
+                        title="Merge this note into the existing one and update links"
+                    >
+                        <Merge size={14} />
+                        Merge
+                    </button>
+                )}
+            </div>
+        )}
         
-        {linkedNotesCount > 0 && (
+        {linkedNotesCount > 0 && !duplicateNote && (
             <div className="mt-2 flex items-center animate-in fade-in slide-in-from-top-1 duration-200">
                 <button
                     onClick={() => {
@@ -1542,7 +1575,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                         <div>
                              <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Related via...</h3>
                              <div className="space-y-8">
-                                {Object.entries(networkData.hubs).map(([hubTitle, connectedNotes]) => (
+                                {(Object.entries(networkData.hubs) as [string, Note[]][]).map(([hubTitle, connectedNotes]) => (
                                     <div key={hubTitle} className="">
                                         <div 
                                             className="inline-flex items-center gap-1.5 px-2 py-1 mb-3 rounded text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer hover:underline"

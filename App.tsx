@@ -1108,6 +1108,40 @@ export default function App() {
       }
   };
 
+  const handleMergeNotes = async (sourceId: string, targetId: string, oldSourceTitle: string) => {
+      const source = notes.find(n => n.id === sourceId);
+      const target = notes.find(n => n.id === targetId);
+      if (!source || !target) return;
+
+      lastEditTimeRef.current = Date.now();
+
+      // 1. Refactor links pointing to the old source title to point to target (if necessary)
+      // Note: If the source note's title was already updated to the target's title, 
+      // oldSourceTitle is essential to find broken links.
+      if (oldSourceTitle && oldSourceTitle !== target.title) {
+          await handleRefactorLinks(oldSourceTitle, target.title);
+      }
+
+      // 2. Merge Content
+      const separator = `\n\n---\n\n`;
+      const newContent = target.content + separator + source.content;
+
+      // 3. Update Target
+      addUnsyncedId(targetId);
+      await db.notes.update(targetId, { 
+          content: newContent,
+          updatedAt: Date.now()
+      });
+
+      // 4. Soft Delete Source
+      const now = Date.now();
+      addUnsyncedId(sourceId);
+      await db.notes.update(sourceId, { deletedAt: now, updatedAt: now });
+      
+      // 5. Update Panes: Close deleted note, open target
+      setPanes(prev => prev.map(p => p === sourceId ? targetId : p));
+  };
+
   const goBack = () => {
       const hist = history[activePaneIndex];
       if (hist && hist.currentIndex > 0) {
@@ -1549,6 +1583,7 @@ export default function App() {
                     onLinkClick={handleLinkClick}
                     onRefactorLinks={handleRefactorLinks}
                     onCreateNoteWithContent={handleCreateSpecificNote}
+                    onMergeNotes={handleMergeNotes}
                     fontSize={fontSize}
                     isActive={activePaneIndex === 0}
                     highlightedLine={highlightedLine}
@@ -1581,6 +1616,7 @@ export default function App() {
                             onLinkClick={handleLinkClick}
                             onRefactorLinks={handleRefactorLinks}
                             onCreateNoteWithContent={handleCreateSpecificNote}
+                            onMergeNotes={handleMergeNotes}
                             fontSize={fontSize}
                             isActive={activePaneIndex === 1}
                             highlightedLine={highlightedLine}
