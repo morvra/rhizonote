@@ -708,6 +708,10 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   // タッチ開始時の座標とカーソル位置を記録
   const handleTouchStart = (e: React.TouchEvent<HTMLTextAreaElement>) => {
     if (e.touches.length !== 1 || !textareaRef.current) return;
+    if (textareaRef.current.selectionStart !== textareaRef.current.selectionEnd) {
+        return;
+    }
+
     const touch = e.touches[0];
     touchCursorRef.current = {
         startX: touch.clientX,
@@ -742,7 +746,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         // ブラウザの「戻る/進む」やスクロールを防ぐ
         if (e.cancelable) e.preventDefault();
 
-        // 感度調整: 8pxにつき1文字移動
+        // 感度調整: 16pxにつき1文字移動
         const charsMove = Math.round(deltaX / 16);
         const newPos = Math.max(0, Math.min(localContent.length, touchCursorRef.current.startSelection + charsMove));
 
