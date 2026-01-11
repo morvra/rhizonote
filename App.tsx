@@ -4,10 +4,11 @@ import Editor from './components/Editor';
 import CommandPalette, { CommandItem } from './components/CommandPalette';
 import { Note, Folder, SortField, SortDirection, Theme } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS } from './constants';
-import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle, Shuffle, Eye, Bookmark, Terminal } from 'lucide-react';
+import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle, Shuffle, Eye, Bookmark, Terminal, Download, Trash, FileJson } from 'lucide-react';
 import { getDropboxAuthUrl, parseAuthTokenFromUrl, syncDropboxData, getNotePath, getFolderPath, RenameOperation, exchangeCodeForToken } from './utils/dropboxService';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
+import { exportNoteAsMarkdown, exportNoteAsHtml, exportAllAsZip } from './utils/exportService';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -464,6 +465,28 @@ export default function App() {
       localStorage.removeItem(LS_KEY_DB_TOKEN);
       localStorage.removeItem(LS_KEY_DB_REFRESH_TOKEN);
       setSyncMessage('');
+  };
+
+  const handleDeleteAllData = () => {
+      setConfirmModal({
+          isOpen: true,
+          message: "⚠️ DANGER: This will permanently delete ALL notes, folders, and local settings. This action cannot be undone. Are you sure?",
+          onConfirm: async () => {
+              try {
+                  await db.notes.clear();
+                  await db.folders.clear();
+                  
+                  // LocalStorageもクリア（認証情報などは残すか、全部消すかは要件次第ですが、ここでは全部消します）
+                  localStorage.clear();
+                  
+                  // ページをリロードして初期状態に戻す
+                  window.location.reload();
+              } catch (e) {
+                  console.error("Failed to delete data", e);
+                  alert("Failed to delete data.");
+              }
+          }
+      });
   };
 
   const handleSync = async () => {
@@ -1381,6 +1404,26 @@ export default function App() {
         { id: 'sync', label: 'Start Sync', icon: <RefreshCw size={16}/>, action: handleSync, shortcut: 'Ctrl+S', group: 'System' },
         { id: 'tasks', label: 'Show Tasks', icon: <CheckSquare size={16}/>, action: () => setShowTasks(true), shortcut: 'Alt+T', group: 'View' },
         { id: 'settings', label: 'Open Settings', icon: <Terminal size={16}/>, action: () => setShowSettings(true), group: 'System' },
+        { 
+            id: 'export-md', 
+            label: 'Export Current Note (Markdown)', 
+            icon: <Download size={16}/>, 
+            action: () => {
+                const current = notes.find(n => n.id === activeNoteId);
+                if (current) exportNoteAsMarkdown(current);
+            }, 
+            group: 'Export' 
+        },
+        { 
+            id: 'export-html', 
+            label: 'Export Current Note (HTML)', 
+            icon: <FileJson size={16}/>, 
+            action: () => {
+                const current = notes.find(n => n.id === activeNoteId);
+                if (current) exportNoteAsHtml(current);
+            }, 
+            group: 'Export' 
+        },
     ];
 
     const bookmarkCommands: CommandItem[] = notes
@@ -1395,7 +1438,7 @@ export default function App() {
         }));
 
     return [...baseCommands, ...bookmarkCommands];
-  }, [notes, handleCreateNote, handleOpenDailyNote, handleOpenRandomNote, toggleSplitView, handleSync]);
+  }, [notes, handleCreateNote, handleOpenDailyNote, handleOpenRandomNote, toggleSplitView, handleSync, activeNoteId]);
 
   const handleToolbarClick = (e: React.MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -1896,6 +1939,33 @@ export default function App() {
                                 )}
                             </>
                         )}
+                    </div>
+                </div>
+
+                <div className="space-y-3 pt-4 border-t border-gray-200 dark:border-slate-800">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-slate-300">
+                        <Download size={16} />
+                        <span>Data Management</span>
+                    </div>
+                    <div className="bg-gray-100 dark:bg-slate-950 p-3 rounded-lg space-y-3">
+                        <button 
+                            onClick={() => exportAllAsZip(notes, folders)}
+                            className="w-full flex items-center justify-center gap-2 py-2 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md text-xs font-medium transition-colors"
+                        >
+                            <Download size={14} /> Export All Data (ZIP)
+                        </button>
+
+                        <div className="pt-2 border-t border-gray-200 dark:border-slate-800">
+                            <button 
+                                onClick={handleDeleteAllData}
+                                className="w-full flex items-center justify-center gap-2 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-md text-xs font-medium transition-colors"
+                            >
+                                <Trash size={14} /> Delete All Data
+                            </button>
+                            <p className="text-[10px] text-center text-slate-400 mt-1">
+                                Caution: This action cannot be undone.
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
