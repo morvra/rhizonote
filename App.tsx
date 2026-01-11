@@ -1387,6 +1387,22 @@ export default function App() {
     return [...baseCommands, ...bookmarkCommands];
   }, [notes, handleCreateNote, handleOpenDailyNote, handleOpenRandomNote, toggleSplitView, handleSync]);
 
+  const handleToolbarClick = (e: React.MouseEvent) => {
+      const target = e.target as HTMLElement;
+      
+      // ボタン、入力欄、アイコンなどがクリックされた場合は無視する
+      if (
+          target.tagName === 'BUTTON' || 
+          target.closest('button') || 
+          target.tagName === 'INPUT'
+      ) {
+          return;
+      }
+      
+      // カスタムイベントを発行して、Editor側に通知
+      window.dispatchEvent(new Event('rhizonote-scroll-top'));
+  }; 
+
   return (
     <div 
         className={`flex h-screen w-screen overflow-hidden font-sans bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 transition-colors duration-200`}
@@ -1448,7 +1464,10 @@ export default function App() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-full min-w-0">
-        <div className="h-10 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between px-4 bg-gray-50 dark:bg-slate-900 gap-2 shrink-0 transition-colors duration-200">
+        <div 
+            className="h-10 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between px-4 bg-gray-50 dark:bg-slate-900 gap-2 shrink-0 transition-colors duration-200 cursor-pointer"
+            onClick={handleToolbarClick}
+        >
             {/* Toolbar */}
             <div className="flex items-center gap-2">
                 <button

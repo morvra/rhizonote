@@ -259,6 +259,21 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   // 日付フォーマット関数
   const formatDate = (ts: number) => new Date(ts).toLocaleString();
 
+  // App.tsxからのスクロールイベントをリッスンする処理
+  useEffect(() => {
+    const handleScrollTop = () => {
+        // 自分がアクティブなエディタの場合のみスクロールを実行
+        if (isActive && scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    };
+
+    window.addEventListener('rhizonote-scroll-top', handleScrollTop);
+    
+    // クリーンアップ
+    return () => window.removeEventListener('rhizonote-scroll-top', handleScrollTop);
+  }, [isActive]);
+
   useEffect(() => {
     const handleWindowKeyDown = (e: KeyboardEvent) => {
         if (!isActive) return;
