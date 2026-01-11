@@ -769,19 +769,21 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
   useEffect(() => {
     if (highlightedLine && highlightedLine.noteId === note.id) {
-        // 行番号を取得
-        const targetLine = highlightedLine.lineIndex;
-        
-        // 現在のアクティブ行として設定（背景ハイライトのため）
-        setCurrentLineIndex(targetLine);
-
-        // Backdrop内の該当要素を探してスクロール
-        if (backdropRef.current) {
-            const lineEl = backdropRef.current.querySelector(`[data-line="${targetLine}"]`);
-            if (lineEl) {
-                lineEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        const timer = setTimeout(() => {
+            // 行番号を取得
+            const targetLine = highlightedLine.lineIndex;
+            // 現在のアクティブ行として設定（背景ハイライトのため）
+            setCurrentLineIndex(targetLine);
+            // Backdrop内の該当要素を探してスクロール
+            if (backdropRef.current) {
+                const lineEl = backdropRef.current.querySelector(`[data-line="${targetLine}"]`);
+                if (lineEl) {
+                    lineEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                }
             }
-        }
+        }, 100); // 100msの遅延
+
+        return () => clearTimeout(timer);
     }
   }, [highlightedLine, note.id]);
 
