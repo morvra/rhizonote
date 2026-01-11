@@ -30,6 +30,183 @@ const extractLinks = (content: string): string[] => {
     return links;
 };
 
+// Helper to highlight search terms
+const highlightSearch = (text: string, query?: string) => {
+    if (!query || !text) return text;
+    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escapedQuery})`, 'gi');
+    const parts = text.split(regex);
+    if (parts.length === 1) return text;
+    
+    return parts.map((part, i) => 
+      regex.test(part) 
+          ? <mark key={i} className="bg-yellow-400/50 dark:bg-yellow-500/50 text-inherit rounded-sm">{part}</mark> 
+          : part
+    );
+};
+
+// --- Memoized Backdrop Component ---
+// Separated to prevent re-rendering when parent state (like selectionMenu, popup) changes, 
+// ensuring smooth cursor movement even in large files.
+const Backdrop = React.memo(({ 
+    content, 
+    activeLineIndex, 
+    activeSearchQuery, 
+    existingTitles, 
+    hoveredImageUrl,
+    fontSize
+}: { 
+    content: string;
+    activeLineIndex: number;
+    activeSearchQuery: string;
+    existingTitles: Set<string>;
+    hoveredImageUrl: string | null;
+    fontSize: number;
+}) => {
+    const lines = content.split('\n');
+
+    return (
+        <div 
+            className="min-h-full px-8 pt-4 pb-12 font-sans text-slate-800 dark:text-slate-300 whitespace-pre-wrap break-words pointer-events-none z-0"
+            style={{ fontSize: `${fontSize}px`, lineHeight: 1.6 }}
+            aria-hidden="true"
+        >
+            {lines.map((line, index) => {
+                const isActive = index === activeLineIndex;
+                
+                if (isActive) {
+                    return (
+                        <div 
+                            key={index} 
+                            className="whitespace-pre-wrap break-words bg-transparent min-h-[1.5em] w-full text-slate-800 dark:text-slate-300"
+                            data-line={index}
+                        >
+                            {line ? highlightSearch(line, activeSearchQuery) : <br/>}
+                        </div>
+                    );
+                }
+
+                let contentNode: React.ReactNode = highlightSearch(line, activeSearchQuery);
+                // Regex for identifying markdown elements
+                const regex = /(`[^`]+`|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\[\[[^\]]+\]\]|https?:\/\/[^\s)]+)/g;
+                const parts = line.split(regex);
+                
+                if (parts.length > 1) {
+                    contentNode = parts.map((part, i) => {
+                        if (part.startsWith('`')) {
+                            return <span key={i} className="text-amber-600 dark:text-amber-200">{highlightSearch(part, activeSearchQuery)}</span>;
+                        }
+                        if (part.startsWith('![') && part.includes('](') && part.endsWith(')')) {
+                            const match = part.match(/!\[([^\]]*)\]\(([^)]+)\)/);
+                            if (match) {
+                                const alt = match[1];
+                                const url = match[2];
+                                return (
+                                    <span key={i} className="text-amber-600 dark:text-amber-500 relative inline-block">
+                                        {'!['}{highlightSearch(alt, activeSearchQuery)}{']('}
+                                        <span 
+                                            className="underline decoration-amber-500 cursor-pointer pointer-events-auto relative z-10"
+                                            data-url={url}
+                                            data-line-index={index}
+                                            data-image-preview={url}
+                                        >
+                                            {highlightSearch(url, activeSearchQuery)}
+                                        </span>
+                                        {')'}
+                                        <span 
+                                            className={`
+                                                absolute left-0 top-full mt-2 z-50 pointer-events-none select-none px-2
+                                                ${hoveredImageUrl === url ? 'block' : 'hidden'}
+                                            `}
+                                        >
+                                            <div className="bg-white dark:bg-slate-800 p-1 border border-gray-200 dark:border-slate-700 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+                                                <img 
+                                                    src={url} 
+                                                    alt={alt} 
+                                                    className="max-w-[360px] max-h-[300px] object-contain bg-gray-50 dark:bg-slate-900"
+                                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                                />
+                                            </div>
+                                        </span>
+                                    </span>
+                                );
+                            }
+                            return <span key={i} className="text-amber-600 dark:text-amber-500">{highlightSearch(part, activeSearchQuery)}</span>;
+                        }
+                        if (part.startsWith('[') && !part.startsWith('[[') && part.includes('](') && part.endsWith(')')) {
+                            const match = part.match(/\[([^\]]+)\]\(([^)]+)\)/);
+                            if (match) {
+                                const text = match[1];
+                                const url = match[2];
+                                return (
+                                    <span key={i} className="text-blue-600 dark:text-blue-400">
+                                        {'['}
+                                        <span className="text-blue-600 dark:text-blue-400">{highlightSearch(text, activeSearchQuery)}</span>
+                                        {']('}
+                                        <span 
+                                            className="underline decoration-blue-500 cursor-pointer pointer-events-auto relative"
+                                            data-url={url}
+                                            data-line-index={index}
+                                        >
+                                            {highlightSearch(url, activeSearchQuery)}
+                                        </span>
+                                        {')'}
+                                    </span>
+                                );
+                            }
+                            return <span key={i} className="text-blue-600 dark:text-blue-400">{highlightSearch(part, activeSearchQuery)}</span>;
+                        }
+                        if (part.startsWith('[[') && part.endsWith(']]')) {
+                            const title = part.slice(2, -2);
+                            const exists = existingTitles.has(title);
+                            return (
+                                <span 
+                                    key={i} 
+                                    className={`
+                                        ${exists 
+                                            ? 'text-indigo-600 dark:text-indigo-400 underline decoration-indigo-500 pointer-events-auto'
+                                            : 'text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 underline opacity-60 pointer-events-auto'
+                                        }
+                                        relative
+                                    `}
+                                    data-link-title={title}
+                                    data-line-index={index}
+                                >
+                                    {highlightSearch(part, activeSearchQuery)}
+                                </span>
+                            );
+                        }
+                        if (part.match(/^https?:\/\//)) {
+                            return (
+                                <span 
+                                    key={i} 
+                                    className="text-blue-600 dark:text-blue-400 underline decoration-blue-500 pointer-events-auto relative"
+                                    data-url={part}
+                                    data-line-index={index}
+                                >
+                                    {highlightSearch(part, activeSearchQuery)}
+                                </span>
+                            );
+                        }
+                        return <span key={i}>{highlightSearch(part, activeSearchQuery)}</span>;
+                    });
+                } else {
+                    if (line === '') contentNode = <br/>;
+                }
+                return (
+                    <div 
+                        key={index} 
+                        className="whitespace-pre-wrap break-words bg-white dark:bg-slate-950 min-h-[1.5em] w-full" 
+                        data-line={index}
+                    >
+                        {contentNode}
+                    </div>
+                );
+            })}
+        </div>
+    );
+});
+
 interface NoteCardProps {
   note: Note;
   onLinkClick: (t: string) => void;
@@ -490,13 +667,23 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
   const networkData = useMemo<{ direct: Note[]; hubs: Record<string, Note[]> }>(() => {
       const activeAllNotes = allNotes.filter(n => !n.deletedAt);
-      // Use debounced states for heavy graph calculation
       const currentTitle = debouncedTitle;
       const currentId = note.id;
-      const getLinks = (content: string) => extractLinks(content);
+      
+      // OPTIMIZATION: Build a map of noteID -> links array ONCE for this calculation cycle
+      // This prevents running regex (extractLinks) inside the nested loop (hubs calculation),
+      // turning O(N^2 * ContentLen) into O(N * ContentLen) + O(Links).
+      const noteLinksMap = new Map<string, string[]>();
+      activeAllNotes.forEach(n => {
+          // For the current note, use the debounced content instead of the stale content in allNotes
+          const content = n.id === currentId ? debouncedContent : n.content;
+          noteLinksMap.set(n.id, extractLinks(content));
+      });
 
-      // 1. Outgoing (本文に出てくる順序) のリストを作成
-      const rawLinks = getLinks(debouncedContent); // リンクテキストの配列（出現順）
+      const getLinksFromMap = (n: Note) => noteLinksMap.get(n.id) || [];
+
+      // 1. Outgoing (using the debounced content of current note)
+      const rawLinks = getLinksFromMap({ ...note, id: currentId, content: debouncedContent } as Note);
       const outgoingNotes: Note[] = [];
       const seenIds = new Set<string>(); // 重復防止用
       seenIds.add(currentId); // 自分自身は除外
@@ -529,33 +716,31 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
           }
       });
 
-      // 2. Backlinks (このノートへリンクしているノート) のリストを作成
-      // Outgoingに含まれていないものだけを抽出し、更新日時順(新しい順)に並べる
+      // 2. Backlinks (using pre-calculated map)
       const backlinkNotes = activeAllNotes
           .filter(n => {
               if (n.id === currentId) return false;
               if (seenIds.has(n.id)) return false; // 既にOutgoingにあるなら除外
               
-              // 相手の本文に自分のタイトルが含まれているか
-              return getLinks(n.content).includes(currentTitle);
+              // Use cached links map instead of running extractLinks
+              return getLinksFromMap(n).includes(currentTitle);
           })
           .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
-      // 3. Direct References の完成 (Outgoing順 + Backlink更新順)
+      // 3. Direct References の完成
       const sortedDirectNotes = [...outgoingNotes, ...backlinkNotes];
 
       // 4. Hubs (Related Via) の計算
       const hubs: Record<string, Note[]> = {};
 
       sortedDirectNotes.forEach(neighbor => {
-          // Neighbor自体がHubとなって繋がっている先のノートを探す
           const relatedNotes: Note[] = [];
 
           if (neighbor.isGhost) {
-              // Ghostの場合: 他のノートで「このGhostへのリンク」を持っているものを探す (Siblings)
+              // Ghostの場合
               const siblings = activeAllNotes.filter(n => {
                   if (n.id === currentId) return false;
-                  return getLinks(n.content).includes(neighbor.title);
+                  return getLinksFromMap(n).includes(neighbor.title);
               });
               relatedNotes.push(...siblings);
 
@@ -563,15 +748,14 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
               // 実在ノートの場合: 
               // A (Current) <-> B (Neighbor) <-> C (Related)
               
-              // パターン1: Neighbor -> C (NeighborがCへリンクしている)
-              const neighborLinks = getLinks(neighbor.content);
+              // パターン1: Neighbor -> C
+              const neighborLinks = getLinksFromMap(neighbor);
               neighborLinks.forEach(link => {
-                  if (link === currentTitle) return; // 自分への戻りリンクは除外
-                  if (link === neighbor.title) return; // 自己参照は除外
+                  if (link === currentTitle) return; 
+                  if (link === neighbor.title) return;
 
                   let target = activeAllNotes.find(n => n.title === link);
                   if (!target) {
-                       // 2-hop先のGhost
                        target = {
                            id: `ghost-via-${neighbor.id}-${link}`,
                            title: link,
@@ -584,23 +768,22 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                        };
                   }
 
-                  // 自分自身でなければリストに追加
                   if (target.id !== currentId) {
                       relatedNotes.push(target);
                   }
               });
 
-              // パターン2: C -> Neighbor (CがNeighborへリンクしている)
+              // パターン2: C -> Neighbor
               const incoming = activeAllNotes.filter(n => {
                   if (n.id === currentId) return false;
                   if (n.id === neighbor.id) return false;
-                  return getLinks(n.content).includes(neighbor.title);
+                  // Use cached links map
+                  return getLinksFromMap(n).includes(neighbor.title);
               });
               relatedNotes.push(...incoming);
           }
 
           if (relatedNotes.length > 0) {
-              // Hub内のノートも重複排除し、更新順にしておく
               const unique = relatedNotes
                   .filter((n, i, self) => i === self.findIndex(s => s.title === n.title))
                   .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
@@ -1300,161 +1483,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     }
   };
 
-  // Helper to highlight search terms
-  const highlightSearch = (text: string, query?: string) => {
-      if (!query || !text) return text;
-      const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`(${escapedQuery})`, 'gi');
-      const parts = text.split(regex);
-      if (parts.length === 1) return text;
-      
-      return parts.map((part, i) => 
-        regex.test(part) 
-            ? <mark key={i} className="bg-yellow-400/50 dark:bg-yellow-500/50 text-inherit rounded-sm">{part}</mark> 
-            : part
-      );
-  };
-
-  const renderBackdrop = (content: string, activeLine: number) => {
-      const lines = content.split('\n');
-      // existingTitles is now memoized in the component scope
-      
-      return lines.map((line, index) => {
-          const isActive = index === activeLine;
-          
-          if (isActive) {
-              return (
-                <div 
-                    key={index} 
-                    className="whitespace-pre-wrap break-words bg-transparent min-h-[1.5em] w-full text-slate-800 dark:text-slate-300"
-                    data-line={index}
-                >
-                    {line ? highlightSearch(line, activeSearchQuery) : <br/>}
-                </div>
-              );
-          }
-
-          let contentNode: React.ReactNode = highlightSearch(line, activeSearchQuery);
-          const regex = /(`[^`]+`|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\[\[[^\]]+\]\]|https?:\/\/[^\s)]+)/g;
-          const parts = line.split(regex);
-          if (parts.length > 1) {
-             contentNode = parts.map((part, i) => {
-                 if (part.startsWith('`')) {
-                     return <span key={i} className="text-amber-600 dark:text-amber-200">{highlightSearch(part, activeSearchQuery)}</span>;
-                 }
-                 if (part.startsWith('![') && part.includes('](') && part.endsWith(')')) {
-                    const match = part.match(/!\[([^\]]*)\]\(([^)]+)\)/);
-                    if (match) {
-                        const alt = match[1];
-                        const url = match[2];
-                        return (
-                            <span key={i} className="text-amber-600 dark:text-amber-500 relative inline-block">
-                                {'!['}{highlightSearch(alt, activeSearchQuery)}{']('}
-                                <span 
-                                    className="underline decoration-amber-500 cursor-pointer pointer-events-auto relative z-10"
-                                    data-url={url}
-                                    data-line-index={index}
-                                    data-image-preview={url}
-                                >
-                                    {highlightSearch(url, activeSearchQuery)}
-                                </span>
-                                {')'}
-
-                                {/* CSSホバーではなく、State (hoveredImageUrl) に基づいて表示を制御 */}
-                                <span 
-                                    className={`
-                                        absolute left-0 top-full mt-2 z-50 pointer-events-none select-none px-2
-                                        ${hoveredImageUrl === url ? 'block' : 'hidden'}
-                                    `}
-                                >
-                                    <div className="bg-white dark:bg-slate-800 p-1 border border-gray-200 dark:border-slate-700 shadow-xl animate-in fade-in zoom-in-95 duration-150">
-                                        <img 
-                                            src={url} 
-                                            alt={alt} 
-                                            className="max-w-[360px] max-h-[300px] object-contain bg-gray-50 dark:bg-slate-900"
-                                            onError={(e) => {
-                                                e.currentTarget.style.display = 'none';
-                                            }}
-                                        />
-                                    </div>
-                                </span>
-                            </span>
-                        );
-                    }
-                    return <span key={i} className="text-amber-600 dark:text-amber-500">{highlightSearch(part, activeSearchQuery)}</span>;
-                 }
-                 if (part.startsWith('[') && !part.startsWith('[[') && part.includes('](') && part.endsWith(')')) {
-                    const match = part.match(/\[([^\]]+)\]\(([^)]+)\)/);
-                    if (match) {
-                        const text = match[1];
-                        const url = match[2];
-                        return (
-                            <span key={i} className="text-blue-600 dark:text-blue-400">
-                                {'['}
-                                <span className="text-blue-600 dark:text-blue-400">{highlightSearch(text, activeSearchQuery)}</span>
-                                {']('}
-                                <span 
-                                    className="underline decoration-blue-500 cursor-pointer pointer-events-auto relative"
-                                    data-url={url}
-                                    data-line-index={index}
-                                >
-                                    {highlightSearch(url, activeSearchQuery)}
-                                </span>
-                                {')'}
-                            </span>
-                        );
-                    }
-                    return <span key={i} className="text-blue-600 dark:text-blue-400">{highlightSearch(part, activeSearchQuery)}</span>;
-                 }
-                 if (part.startsWith('[[') && part.endsWith(']]')) {
-                     const title = part.slice(2, -2);
-                     const exists = existingTitles.has(title);
-                     return (
-                         <span 
-                            key={i} 
-                            className={`
-                                ${exists 
-                                    ? 'text-indigo-600 dark:text-indigo-400 underline decoration-indigo-500 pointer-events-auto'
-                                    : 'text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 underline opacity-60 pointer-events-auto'
-                                }
-                                relative
-                            `}
-                            data-link-title={title}
-                            data-line-index={index}
-                         >
-                             {highlightSearch(part, activeSearchQuery)}
-                         </span>
-                     );
-                 }
-                 if (part.match(/^https?:\/\//)) {
-                     return (
-                         <span 
-                            key={i} 
-                            className="text-blue-600 dark:text-blue-400 underline decoration-blue-500 pointer-events-auto relative"
-                            data-url={part}
-                            data-line-index={index}
-                         >
-                             {highlightSearch(part, activeSearchQuery)}
-                         </span>
-                     );
-                 }
-                 return <span key={i}>{highlightSearch(part, activeSearchQuery)}</span>;
-             });
-          } else {
-             if (line === '') contentNode = <br/>;
-          }
-          return (
-            <div 
-                key={index} 
-                className="whitespace-pre-wrap break-words bg-white dark:bg-slate-950 min-h-[1.5em] w-full" 
-                data-line={index}
-            >
-                {contentNode}
-            </div>
-          );
-      });
-  };
-
   const handlePreviewTaskToggle = (taskIndex: number) => {
     const lines = localContent.split('\n');
     let currentTaskCount = 0;
@@ -1638,14 +1666,14 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         <div className="flex flex-col min-h-full">
             {mode === 'edit' ? (
             <div className="relative w-full flex-1 min-h-[200px]" ref={containerRef}>
-                <div 
-                    ref={backdropRef}
-                    className={`min-h-full px-8 pt-4 pb-12 font-sans text-slate-800 dark:text-slate-300 whitespace-pre-wrap break-words pointer-events-none z-0`}
-                    style={{ fontSize: `${fontSize}px`, lineHeight: 1.6 }}
-                    aria-hidden="true"
-                >
-                    {renderBackdrop(localContent, currentLineIndex)}
-                </div>
+                <Backdrop 
+                    content={localContent}
+                    activeLineIndex={currentLineIndex}
+                    activeSearchQuery={activeSearchQuery}
+                    existingTitles={existingTitles}
+                    hoveredImageUrl={hoveredImageUrl}
+                    fontSize={fontSize}
+                />
 
                 <textarea
                 ref={textareaRef}
