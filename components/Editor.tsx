@@ -202,6 +202,10 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const lastEditTimeRef = useRef<number>(0);
   const prevNoteIdRef = useRef(note.id);
   
+  // -- Debounce Logic --
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const latestLocalContentRef = useRef(note.content); // Track for async save/cleanup
+
   // Search Highlight State
   const [activeSearchQuery, setActiveSearchQuery] = useState(searchQuery || '');
 
@@ -210,10 +214,28 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       prevNoteIdRef.current = note.id;
       setOriginalTitle(note.title);
       setLocalContent(note.content);
+      latestLocalContentRef.current = note.content;
       setLocalTitle(note.title);
       // Reset active search query when note changes
       setActiveSearchQuery(searchQuery || '');
   }
+
+  // Keep ref in sync for cleanup function
+  useEffect(() => {
+      latestLocalContentRef.current = localContent;
+  }, [localContent]);
+
+  // Cleanup: Save pending changes when note changes or component unmounts
+  useEffect(() => {
+      const currentNoteId = note.id;
+      return () => {
+          if (saveTimeoutRef.current) {
+              clearTimeout(saveTimeoutRef.current);
+              // Save the content that was in the buffer for this note
+              onUpdate(currentNoteId, { content: latestLocalContentRef.current });
+          }
+      };
+  }, [note.id, onUpdate]);
 
   useEffect(() => {
     setActiveSearchQuery(searchQuery || '');
@@ -226,6 +248,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
           const timeSinceEdit = Date.now() - lastEditTimeRef.current;
           if (note.content !== localContent && timeSinceEdit > 2000) {
               setLocalContent(note.content);
+              latestLocalContentRef.current = note.content;
           }
           // 外部データとローカルが異なり、かつ直近(2秒以内)で編集していない場合のみ反映
           if (note.title !== localTitle && timeSinceEdit > 2000) {
@@ -234,11 +257,22 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       }
   }, [note.content, note.title, note.id, localContent, localTitle]);
 
-  // Helper to update both local state and persist to DB
+  // Helper to update both local state and persist to DB (Debounced)
   const updateContent = (newContent: string) => {
+      // 1. Instant Local Update
       setLocalContent(newContent);
       lastEditTimeRef.current = Date.now();
-      onUpdate(note.id, { content: newContent });
+
+      // 2. Clear existing timer
+      if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+      }
+
+      // 3. Set new debounced timer
+      saveTimeoutRef.current = setTimeout(() => {
+          onUpdate(note.id, { content: newContent });
+          saveTimeoutRef.current = null;
+      }, 1000); // 1 second debounce
   };
   
   const clearSearchHighlight = () => {
@@ -1578,7 +1612,14 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 onTouchEnd={handleTouchEnd}
                 onKeyDown={handleKeyDown}
                 onKeyUp={handleKeyUp}
-                onBlur={() => setSelectionMenu(null)}
+                onBlur={() => {
+                    setSelectionMenu(null);
+                    if (saveTimeoutRef.current) {
+                        clearTimeout(saveTimeoutRef.current);
+                        onUpdate(note.id, { content: localContent });
+                        saveTimeoutRef.current = null;
+                    }
+                }}
                 className={`absolute inset-0 w-full h-full px-8 pt-4 pb-12 bg-transparent caret-indigo-600 dark:caret-slate-200 font-sans resize-none focus:outline-none overflow-hidden z-10 text-transparent`}
                 style={{ fontSize: `${fontSize}px`, lineHeight: 1.6 }}
                 placeholder="Start typing..."
