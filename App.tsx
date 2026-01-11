@@ -1651,7 +1651,7 @@ export default function App() {
                     <button
                         onClick={handleOpenGridView}
                         className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
-                        title="All Notes Grid"
+                        title="All Notes Grid (Alt + G)"
                     >
                         <LayoutGrid size={18} />
                     </button>
