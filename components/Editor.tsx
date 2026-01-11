@@ -45,9 +45,23 @@ const highlightSearch = (text: string, query?: string) => {
     );
 };
 
+// Helper to format date
+const formatDate = (timestamp: number) => {
+    return new Date(timestamp).toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+};
+
+// Helper to count characters excluding whitespace
+const getCleanCharCount = (text: string) => {
+    return text.replace(/\s/g, '').length;
+};
+
 // --- Memoized Backdrop Component ---
-// Separated to prevent re-rendering when parent state (like selectionMenu, popup) changes, 
-// ensuring smooth cursor movement even in large files.
 const Backdrop = React.memo(({ 
     content, 
     activeLineIndex, 
@@ -87,7 +101,6 @@ const Backdrop = React.memo(({
                 }
 
                 let contentNode: React.ReactNode = highlightSearch(line, activeSearchQuery);
-                // Regex for identifying markdown elements
                 const regex = /(`[^`]+`|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\[\[[^\]]+\]\]|https?:\/\/[^\s)]+)/g;
                 const parts = line.split(regex);
                 
@@ -371,8 +384,34 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const [isMobile, setIsMobile] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
 
+  const [currentLineIndex, setCurrentLineIndex] = useState<number>(-1);
+  const [showPopup, setShowPopup] = useState(false);
+  const [popupQuery, setPopupQuery] = useState('');
+  const [popupPos, setPopupPos] = useState<{ top?: number; bottom?: number; left: number }>({ top: 0, left: 0 });
+  const [cursorIndex, setCursorIndex] = useState(0);
+  const [selectionMenu, setSelectionMenu] = useState<{ top: number; left: number; text: string; start: number; end: number; showBelow: boolean } | null>(null);
+  const [hoveredImageUrl, setHoveredImageUrl] = useState<string | null>(null);
+
+  const prevSelectionRef = useRef<number>(0);
+  const pendingSelectionRef = useRef<{ start: number; end: number; scrollLineIndex?: number } | null>(null);
+  const pendingCursorRef = useRef<number | null>(null);
+  const isLinkClickRef = useRef(false);
+  const touchCursorRef = useRef<{ startX: number; startY: number; startSelection: number; active: boolean } | null>(null);
+
+  // Mobile detection
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // -- Tracked ID for State Reset --
+  // Using state instead of ref for ID tracking ensures that resets happen 
+  // consistently within the React render cycle, avoiding StrictMode double-invocation issues.
+  const [trackedId, setTrackedId] = useState(note.id);
+
   // -- Content State Management --
-  // We use local state for the textarea to prevent cursor jumping due to async DB updates/re-renders
   const [localContent, setLocalContent] = useState(note.content);
   const [localTitle, setLocalTitle] = useState(note.title);
   const [originalTitle, setOriginalTitle] = useState(note.title);
@@ -381,31 +420,53 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const [debouncedContent, setDebouncedContent] = useState(note.content);
   const [debouncedTitle, setDebouncedTitle] = useState(note.title);
 
+  // Search Highlight State
+  const [activeSearchQuery, setActiveSearchQuery] = useState(searchQuery || '');
+
+  // Derived values for current render cycle
+  // If we detected a note switch (trackedId !== note.id), we must use the NEW note's data
+  // immediately for rendering to avoid flashing old content, even before the state updates process.
+  
+  // Logic to determine if we are in a "switching" state or stable state
+  const isSwitching = trackedId !== note.id;
+
+  // Real-time values (for UI input, duplicate check, backdrop)
+  const displayTitle = isSwitching ? note.title : localTitle;
+  const displayContent = isSwitching ? note.content : localContent;
+  const displaySearchQuery = isSwitching ? (searchQuery || '') : activeSearchQuery;
+
+  // Heavy-process values (for graph, analysis)
+  const analysisTitle = isSwitching ? note.title : debouncedTitle;
+  const analysisContent = isSwitching ? note.content : debouncedContent;
+  const currentOriginalTitle = isSwitching ? note.title : originalTitle;
+
+  if (isSwitching) {
+      setTrackedId(note.id);
+      
+      setOriginalTitle(note.title);
+      setLocalContent(note.content);
+      setLocalTitle(note.title);
+      
+      setDebouncedContent(note.content);
+      setDebouncedTitle(note.title);
+      
+      setActiveSearchQuery(searchQuery || '');
+  }
+
   const lastEditTimeRef = useRef<number>(0);
-  const prevNoteIdRef = useRef(note.id);
   
   // -- Debounce Logic for Saving --
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const latestContentRef = useRef(note.content);
   const latestTitleRef = useRef(note.title);
 
-  // Search Highlight State
-  const [activeSearchQuery, setActiveSearchQuery] = useState(searchQuery || '');
-
-  // If the note ID changes, we must reset the local content immediately (during render) to avoid showing old content
-  if (prevNoteIdRef.current !== note.id) {
-      prevNoteIdRef.current = note.id;
-      setOriginalTitle(note.title);
-      setLocalContent(note.content);
-      latestContentRef.current = note.content;
-      setLocalTitle(note.title);
-      latestTitleRef.current = note.title;
-      // Reset debounced state immediately to avoid flash of old analysis
-      setDebouncedContent(note.content);
-      setDebouncedTitle(note.title);
-      // Reset active search query when note changes
-      setActiveSearchQuery(searchQuery || '');
-  }
+  // Linked Notes Count
+  const linkedNotesCount = useMemo(() => {
+      if (currentOriginalTitle === displayTitle) return 0;
+      const escaped = currentOriginalTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`\\[\\[${escaped}\\]\\]`);
+      return allNotes.filter(n => n.id !== note.id && !n.deletedAt && regex.test(n.content)).length;
+  }, [currentOriginalTitle, displayTitle, allNotes, note.id]);
 
   // Keep refs in sync for cleanup/save function
   useEffect(() => {
@@ -431,10 +492,14 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
           clearTimeout(saveTimeoutRef.current);
           saveTimeoutRef.current = null;
       }
-      onUpdate(note.id, { 
-          title: latestTitleRef.current,
-          content: latestContentRef.current 
-      });
+      
+      // Only trigger update if content or title has actually changed from the props
+      if (latestTitleRef.current !== note.title || latestContentRef.current !== note.content) {
+          onUpdate(note.id, { 
+              title: latestTitleRef.current,
+              content: latestContentRef.current 
+          });
+      }
   };
 
   // Helper to trigger debounced save
@@ -450,6 +515,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   useEffect(() => {
       const currentNoteId = note.id;
       // Capture values at unmount time for the cleanup closure
+      // Note: We use the refs which are updated via useEffect([localContent]).
+      // When switching notes, the cleanup runs BEFORE the new note's effect updates these refs,
+      // ensuring we save the OLD note's content.
       const contentToSave = latestContentRef;
       const titleToSave = latestTitleRef;
       
@@ -472,7 +540,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   // Handle external updates (e.g. Sync) to the *same* note
   useEffect(() => {
       // If content is different and we haven't edited locally recently (buffer for debounce/lag)
-      if (note.id === prevNoteIdRef.current) {
+      if (note.id === trackedId) {
           const timeSinceEdit = Date.now() - lastEditTimeRef.current;
           if (note.content !== localContent && timeSinceEdit > 2000) {
               setLocalContent(note.content);
@@ -486,7 +554,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
               latestTitleRef.current = note.title;
           }
       }
-  }, [note.content, note.title, note.id, localContent, localTitle]);
+  }, [note.content, note.title, note.id, localContent, localTitle, trackedId]);
 
   // Update handlers
   const updateContent = (newContent: string) => {
@@ -506,184 +574,34 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   // Optimization: Memoize existing titles for backdrop to prevent O(N) iteration on every keystroke
   const existingTitles = useMemo(() => new Set(allNotes.filter(n => !n.deletedAt).map(n => n.title)), [allNotes]);
 
-  // Duplicate detection - Use debounced title
+  // Duplicate detection - Use derived variable (displayTitle)
   const duplicateNote = useMemo(() => {
-    if (!debouncedTitle.trim()) return null;
+    if (!displayTitle.trim()) return null;
     return allNotes.find(n => 
         n.id !== note.id && 
         !n.deletedAt && 
-        n.title.trim().toLowerCase() === debouncedTitle.trim().toLowerCase()
+        n.title.trim().toLowerCase() === displayTitle.trim().toLowerCase()
     );
-  }, [debouncedTitle, allNotes, note.id]);
+  }, [displayTitle, allNotes, note.id]);
 
-  // Markdown記号を除去して文字数をカウントする関数
-  const getCleanCharCount = (text: string) => {
-    return text
-      .replace(/^#+\s/gm, '')
-      .replace(/(\*\*|__)(.*?)\1/g, '$2')
-      .replace(/(\*|_)(.*?)\1/g, '$2')
-      .replace(/~~(.*?)~~/g, '$1')
-      .replace(/`([^`]+)`/g, '$1')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
-      .replace(/\[\[(.*?)\]\]/g, '$1')
-      .replace(/\n/g, '')
-      .length;
-  };
-  
-  // 日付フォーマット関数
-  const formatDate = (ts: number) => new Date(ts).toLocaleString();
-
-  // App.tsxからのスクロールイベントをリッスンする処理
-  useEffect(() => {
-    const handleScrollTop = () => {
-        // 自分がアクティブなエディタの場合のみスクロールを実行
-        if (isActive && scrollContainerRef.current) {
-            scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-    };
-
-    window.addEventListener('rhizonote-scroll-top', handleScrollTop);
-    
-    // クリーンアップ
-    return () => window.removeEventListener('rhizonote-scroll-top', handleScrollTop);
-  }, [isActive]);
-
-  useEffect(() => {
-    const handleWindowKeyDown = (e: KeyboardEvent) => {
-        if (!isActive) return;
-        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'e') {
-            e.preventDefault();
-            setMode(prev => prev === 'edit' ? 'preview' : 'edit');
-        }
-    };
-    const handleCustomToggle = () => {
-        if (isActive) setMode(prev => prev === 'edit' ? 'preview' : 'edit');
-    };
-    window.addEventListener('keydown', handleWindowKeyDown);
-    window.addEventListener('rhizonote-toggle-preview', handleCustomToggle);
-    return () => {
-        window.removeEventListener('keydown', handleWindowKeyDown);
-        window.removeEventListener('rhizonote-toggle-preview', handleCustomToggle);
-    };
-  }, [isActive]);
-
-  useEffect(() => {
-      const checkMobile = () => setIsMobile(window.innerWidth < 768);
-      checkMobile();
-      window.addEventListener('resize', checkMobile);
-      return () => window.removeEventListener('resize', checkMobile);
-  }, []);
-
-  const prevSelectionRef = useRef<number>(0);
-  const [currentLineIndex, setCurrentLineIndex] = useState<number>(-1);
-  const pendingCursorRef = useRef<number | null>(null);
-  const [hoveredImageUrl, setHoveredImageUrl] = useState<string | null>(null);
-  const pendingSelectionRef = useRef<{ start: number; end: number; scrollLineIndex?: number } | null>(null);
-  const [showPopup, setShowPopup] = useState(false);
-  const [popupQuery, setPopupQuery] = useState('');
-  const [popupPos, setPopupPos] = useState<{ top?: number; bottom?: number; left: number }>({ top: 0, left: 0 });
-  const [cursorIndex, setCursorIndex] = useState(0);
-
-  const [selectionMenu, setSelectionMenu] = useState<{
-    top: number;
-    left: number;
-    text: string;
-    start: number;
-    end: number;
-    showBelow?: boolean;
-  } | null>(null);
-
-  const isLinkClickRef = useRef(false);
-  const touchCursorRef = useRef<{ startX: number; startY: number; startSelection: number; active: boolean } | null>(null);
-
-  const lastHighlightRef = useRef<any>(null);
-
-  // Handle Highlight from Task Jump
-  useEffect(() => {
-    if (highlightedLine && highlightedLine !== lastHighlightRef.current && highlightedLine.noteId === note.id) {
-        lastHighlightRef.current = highlightedLine;
-        setTimeout(() => {
-             if (backdropRef.current) {
-                const lineEl = backdropRef.current.querySelector(`[data-line="${highlightedLine.lineIndex}"]`);
-                if (lineEl) {
-                    lineEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                    if (textareaRef.current) {
-                        const lines = localContent.split('\n');
-                        let charIndex = 0;
-                        for(let i=0; i<highlightedLine.lineIndex; i++) {
-                            charIndex += (lines[i]?.length || 0) + 1; 
-                        }
-                        textareaRef.current.focus();
-                        textareaRef.current.setSelectionRange(charIndex, charIndex);
-                        setCurrentLineIndex(highlightedLine.lineIndex);
-                    }
-                }
-             }
-        }, 50);
-    }
-  }, [highlightedLine, note.id, localContent]);
-
-  // Handle Auto-Scroll from Search Query
-  useEffect(() => {
-    if (searchQuery && textareaRef.current && mode === 'edit') {
-        const lowerContent = localContent.toLowerCase();
-        const lowerQuery = searchQuery.toLowerCase();
-        const index = lowerContent.indexOf(lowerQuery);
-        
-        if (index >= 0) {
-            // Use timeout to ensure this runs after the note switch reset effect
-            setTimeout(() => {
-                if (!textareaRef.current) return;
-
-                // Scroll Logic (Do NOT set selection range to avoid visual selection)
-                // 1. Focus
-                textareaRef.current.focus();
-                
-                // 2. Find line number to scroll backdrop view
-                const line = localContent.substring(0, index).split('\n').length - 1;
-                setCurrentLineIndex(line);
-                
-                // 3. Trigger Scroll
-                if (backdropRef.current) {
-                    const lineEl = backdropRef.current.querySelector(`[data-line="${line}"]`);
-                    if (lineEl) {
-                        lineEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                    }
-                }
-            }, 100);
-        }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, note.id]);
-
-
-  const linkedNotesCount = useMemo(() => {
-    if (!originalTitle || originalTitle === note.title) return 0;
-    const escapedTitle = originalTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`\\[\\[${escapedTitle}\\]\\]`);
-    return allNotes.filter(n => n.id !== note.id && !n.deletedAt && n.content.match(regex)).length;
-  }, [note.title, originalTitle, allNotes, note.id]);
-
+  // Network/Graph Data calculation - Use derived variables (analysisContent)
   const networkData = useMemo<{ direct: Note[]; hubs: Record<string, Note[]> }>(() => {
       const activeAllNotes = allNotes.filter(n => !n.deletedAt);
-      const currentTitle = debouncedTitle;
+      const currentTitle = analysisTitle;
       const currentId = note.id;
       
       // OPTIMIZATION: Build a map of noteID -> links array ONCE for this calculation cycle
-      // This prevents running regex (extractLinks) inside the nested loop (hubs calculation),
-      // turning O(N^2 * ContentLen) into O(N * ContentLen) + O(Links).
       const noteLinksMap = new Map<string, string[]>();
       activeAllNotes.forEach(n => {
           // For the current note, use the debounced content instead of the stale content in allNotes
-          const content = n.id === currentId ? debouncedContent : n.content;
+          const content = n.id === currentId ? analysisContent : n.content;
           noteLinksMap.set(n.id, extractLinks(content));
       });
 
       const getLinksFromMap = (n: Note) => noteLinksMap.get(n.id) || [];
 
       // 1. Outgoing (using the debounced content of current note)
-      const rawLinks = getLinksFromMap({ ...note, id: currentId, content: debouncedContent } as Note);
+      const rawLinks = getLinksFromMap({ ...note, id: currentId, content: analysisContent } as Note);
       const outgoingNotes: Note[] = [];
       const seenIds = new Set<string>(); // 重復防止用
       seenIds.add(currentId); // 自分自身は除外
@@ -798,7 +716,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
           direct: sortedDirectNotes,
           hubs: hubs
       };
-  }, [debouncedContent, debouncedTitle, allNotes, note.id]);
+  }, [analysisContent, analysisTitle, allNotes, note.id]);
 
   const linkCandidates = useMemo(() => {
     // 1. まずは既存のノートを候補に入れる
@@ -858,7 +776,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 const lineEl = backdropRef.current.querySelector(`[data-line="${scrollLineIndex}"]`);
                 if (lineEl) lineEl.scrollIntoView({ block: 'nearest' });
             }
-            const line = localContent.substring(0, start).split('\n').length - 1;
+            const line = displayContent.substring(0, start).split('\n').length - 1;
             setCurrentLineIndex(line);
             prevSelectionRef.current = start;
             pendingSelectionRef.current = null;
@@ -867,7 +785,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             textareaRef.current.setSelectionRange(pendingCursorRef.current, pendingCursorRef.current);
             const pos = pendingCursorRef.current;
             prevSelectionRef.current = pos;
-            const line = localContent.substring(0, pos).split('\n').length - 1;
+            const line = displayContent.substring(0, pos).split('\n').length - 1;
             setCurrentLineIndex(line);
             pendingCursorRef.current = null;
         }
@@ -878,7 +796,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       if (textareaRef.current) {
           const pos = textareaRef.current.selectionStart;
           prevSelectionRef.current = pos;
-          const line = localContent.substring(0, pos).split('\n').length - 1;
+          const line = displayContent.substring(0, pos).split('\n').length - 1;
           setCurrentLineIndex(line);
       }
   };
@@ -1002,7 +920,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     const start = textareaRef.current.selectionStart;
     const end = textareaRef.current.selectionEnd;
     if (start !== end) {
-        const text = localContent.substring(start, end);
+        const text = displayContent.substring(start, end);
         let top = 0;
         let left = 0;
         const coords = measureSelection(start, end);
@@ -1049,9 +967,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     updateSelectionMenu();
     if (textareaRef.current) {
         const pos = textareaRef.current.selectionStart;
-        const line = localContent.substring(0, pos).split('\n').length - 1;
+        const line = displayContent.substring(0, pos).split('\n').length - 1;
         setCurrentLineIndex(line);
-        checkAutocomplete(pos, localContent);
+        checkAutocomplete(pos, displayContent);
     }
   };
 
@@ -1099,13 +1017,13 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
         // 感度調整: 12pxにつき1文字移動
         const charsMove = Math.round(deltaX / 12);
-        const newPos = Math.max(0, Math.min(localContent.length, touchCursorRef.current.startSelection + charsMove));
+        const newPos = Math.max(0, Math.min(displayContent.length, touchCursorRef.current.startSelection + charsMove));
 
         if (textareaRef.current.selectionStart !== newPos) {
             textareaRef.current.setSelectionRange(newPos, newPos);
             
             // UI更新（行ハイライトなど）
-            const line = localContent.substring(0, newPos).split('\n').length - 1;
+            const line = displayContent.substring(0, newPos).split('\n').length - 1;
             setCurrentLineIndex(line);
             setCursorIndex(newPos);
             
@@ -1131,7 +1049,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         prefix = '[[';
         suffix = ']]';
     }
-    const newValue = localContent.substring(0, start) + prefix + text + suffix + localContent.substring(end);
+    const newValue = displayContent.substring(0, start) + prefix + text + suffix + displayContent.substring(end);
     updateContent(newValue);
     setSelectionMenu(null);
     if(textareaRef.current) {
@@ -1149,7 +1067,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     content += `\n\nfrom [[${note.title}]]`;
     if (!title) return;
     onCreateNoteWithContent(title, content);
-    const newValue = localContent.substring(0, start) + `[[${title}]]` + localContent.substring(end);
+    const newValue = displayContent.substring(0, start) + `[[${title}]]` + displayContent.substring(end);
     updateContent(newValue);
     setSelectionMenu(null);
     if(textareaRef.current) {
@@ -1162,7 +1080,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     updateSelectionMenu();
     const target = e.target as HTMLTextAreaElement;
     const currentClickIndex = target.selectionStart;
-    const content = localContent;
+    const content = displayContent;
     const lineStart = content.lastIndexOf('\n', currentClickIndex - 1) + 1;
     let lineEnd = content.indexOf('\n', currentClickIndex);
     if (lineEnd === -1) lineEnd = content.length;
@@ -1261,7 +1179,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         const start = target.selectionStart;
         const end = target.selectionEnd;
         if (start !== end) {
-            const text = localContent.substring(start, end);
+            const text = displayContent.substring(start, end);
             if (!onCreateNoteWithContent) return;
             const lines = text.split('\n');
             const title = lines[0].trim();
@@ -1269,7 +1187,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             content += `\n\nfrom [[${note.title}]]`;
             if (title) {
                  onCreateNoteWithContent(title, content);
-                 const newValue = localContent.substring(0, start) + `[[${title}]]` + localContent.substring(end);
+                 const newValue = displayContent.substring(0, start) + `[[${title}]]` + displayContent.substring(end);
                  pendingCursorRef.current = start + title.length + 4;
                  updateContent(newValue);
                  setSelectionMenu(null); 
@@ -1467,12 +1385,12 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     updateLineTracking();
     updateSelectionMenu();
     const target = e.target as HTMLTextAreaElement;
-    checkAutocomplete(target.selectionStart, localContent);
+    checkAutocomplete(target.selectionStart, displayContent);
   };
 
   const insertWikiLink = (title: string) => {
     if (!textareaRef.current) return;
-    const value = localContent;
+    const value = displayContent;
     const textBeforeCursor = value.slice(0, cursorIndex);
     const lastOpenBracket = textBeforeCursor.lastIndexOf('[[');
     if (lastOpenBracket !== -1) {
@@ -1484,7 +1402,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   };
 
   const handlePreviewTaskToggle = (taskIndex: number) => {
-    const lines = localContent.split('\n');
+    const lines = displayContent.split('\n');
     let currentTaskCount = 0;
     let inCodeBlock = false;
     const newLines = lines.map(line => {
@@ -1533,7 +1451,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       <div className="flex flex-col px-6 py-3 border-b border-gray-200 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-900/50 z-20">
         <div className="flex items-center justify-between">
             <textarea
-                value={localTitle}
+                value={displayTitle}
                 onChange={(e) => {
                     const newTitle = e.target.value;
                     updateTitle(newTitle);
@@ -1589,13 +1507,13 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                                         <div className="flex justify-between items-center">
                                             <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Characters</span>
                                             <span className="text-indigo-600 dark:text-indigo-400 font-bold font-mono">
-                                                {getCleanCharCount(localContent).toLocaleString()}
+                                                {getCleanCharCount(displayContent).toLocaleString()}
                                             </span>
                                         </div>
                                         <div className="flex justify-between items-center mt-1">
                                             <span className="text-xs text-slate-400">Raw Length</span>
                                             <span className="text-slate-500 dark:text-slate-500 text-xs font-mono">
-                                                {localContent.length.toLocaleString()}
+                                                {displayContent.length.toLocaleString()}
                                             </span>
                                         </div>
                                     </div>
@@ -1667,9 +1585,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             {mode === 'edit' ? (
             <div className="relative w-full flex-1 min-h-[200px]" ref={containerRef}>
                 <Backdrop 
-                    content={localContent}
+                    content={displayContent}
                     activeLineIndex={currentLineIndex}
-                    activeSearchQuery={activeSearchQuery}
+                    activeSearchQuery={displaySearchQuery}
                     existingTitles={existingTitles}
                     hoveredImageUrl={hoveredImageUrl}
                     fontSize={fontSize}
@@ -1677,7 +1595,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
                 <textarea
                 ref={textareaRef}
-                value={localContent}
+                value={displayContent}
                 onChange={handleChange}
                 onClick={handleContentClick}
                 onSelect={updateSelectionMenu}
@@ -1753,7 +1671,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 className="w-full h-full px-8 pt-4 pb-12 prose prose-slate dark:prose-invert max-w-none transition-colors duration-200 flex-1 min-h-[200px] break-words"
                 style={{ fontSize: `${fontSize}px` }}
                 dangerouslySetInnerHTML={renderMarkdown(
-                    localContent, 
+                    displayContent, 
                     new Set(allNotes.filter(n => !n.deletedAt).map(n => n.title))
                 )}
                 onClick={handlePreviewClick}
