@@ -459,7 +459,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const lastEditTimeRef = useRef<number>(0);
   
   // -- Debounce Logic for Saving --
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestContentRef = useRef(note.content);
   const latestTitleRef = useRef(note.title);
 
