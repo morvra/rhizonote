@@ -61,26 +61,29 @@ const getCleanCharCount = (text: string) => {
     return text.replace(/\s/g, '').length;
 };
 
-// --- Memoized Backdrop Component ---
-const Backdrop = React.memo(({ 
-    content, 
-    activeLineIndex, 
-    activeSearchQuery, 
-    existingTitles, 
-    hoveredImageUrl,
-    fontSize
-}: { 
+interface BackdropProps {
     content: string;
     activeLineIndex: number;
     activeSearchQuery: string;
     existingTitles: Set<string>;
     hoveredImageUrl: string | null;
     fontSize: number;
-}) => {
+}
+
+// --- Memoized Backdrop Component ---
+const Backdrop = React.memo(React.forwardRef<HTMLDivElement, BackdropProps>(({ 
+    content, 
+    activeLineIndex, 
+    activeSearchQuery, 
+    existingTitles, 
+    hoveredImageUrl,
+    fontSize
+}, ref) => {
     const lines = content.split('\n');
 
     return (
         <div 
+            ref={ref}
             className="min-h-full px-8 pt-4 pb-12 font-sans text-slate-800 dark:text-slate-300 whitespace-pre-wrap break-words pointer-events-none z-0"
             style={{ fontSize: `${fontSize}px`, lineHeight: 1.6 }}
             aria-hidden="true"
@@ -218,7 +221,7 @@ const Backdrop = React.memo(({
             })}
         </div>
     );
-});
+}));
 
 interface NoteCardProps {
   note: Note;
@@ -535,6 +538,26 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
   useEffect(() => {
     setActiveSearchQuery(searchQuery || '');
+    
+    if (searchQuery) {
+        const timer = setTimeout(() => {
+            const content = displayContent;
+            const lowerContent = content.toLowerCase();
+            const lowerQuery = searchQuery.toLowerCase();
+            const index = lowerContent.indexOf(lowerQuery);
+            
+            if (index !== -1) {
+                const lineIndex = content.substring(0, index).split('\n').length - 1;
+                if (backdropRef.current) {
+                    const lineEl = backdropRef.current.querySelector(`[data-line="${lineIndex}"]`);
+                    if (lineEl) {
+                        lineEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                    }
+                }
+            }
+        }, 100);
+        return () => clearTimeout(timer);
+    }
   }, [searchQuery, note.id]);
 
   // Handle external updates (e.g. Sync) to the *same* note
@@ -1605,6 +1628,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             {mode === 'edit' ? (
             <div className="relative w-full flex-1 min-h-[200px]" ref={containerRef}>
                 <Backdrop 
+                    ref={backdropRef}
                     content={displayContent}
                     activeLineIndex={currentLineIndex}
                     activeSearchQuery={displaySearchQuery}
