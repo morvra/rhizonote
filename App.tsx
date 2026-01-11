@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import Editor from './components/Editor';
+import GridView from './components/GridView';
 import CommandPalette, { CommandItem } from './components/CommandPalette';
 import { Note, Folder, SortField, SortDirection, Theme } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS } from './constants';
-import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle, Shuffle, Eye, Bookmark, Terminal, Download, Trash, FileJson, LayoutTemplate, Command } from 'lucide-react';
+import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle, Shuffle, Eye, Bookmark, Terminal, Download, Trash, FileJson, LayoutTemplate, Command, LayoutGrid } from 'lucide-react';
 import { getDropboxAuthUrl, parseAuthTokenFromUrl, syncDropboxData, getNotePath, getFolderPath, RenameOperation, exchangeCodeForToken } from './utils/dropboxService';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
@@ -12,6 +13,7 @@ import { exportNoteAsMarkdown, exportNoteAsHtml, exportAllAsZip } from './utils/
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+const VIEW_GRID = 'rhizonote_grid_view';
 
 // Local Storage Keys
 const LS_KEY_NOTES = 'rhizonote_notes'; // Deprecated, used for migration
@@ -295,10 +297,10 @@ export default function App() {
 
   const [panes, setPanes] = useState<(string | null)[]>(() => {
       const saved = localStorage.getItem(LS_KEY_PANES);
-      return saved ? JSON.parse(saved) : ['1', null];
+      return saved ? JSON.parse(saved) : [VIEW_GRID, null]; // Default to Grid View
   }); 
   const [history, setHistory] = useState<PaneHistory[]>([
-      { stack: ['1'], currentIndex: 0 },
+      { stack: [VIEW_GRID], currentIndex: 0 },
       { stack: [], currentIndex: -1 }
   ]);
 
@@ -386,6 +388,8 @@ export default function App() {
     if (currentNote) {
         const displayTitle = currentNote.title.trim() || 'Untitled';
         document.title = `${displayTitle} - Rhizonote`;
+    } else if (activeId === VIEW_GRID) {
+        document.title = 'All Notes - Rhizonote';
     } else {
         document.title = 'Rhizonote';
     }
@@ -793,6 +797,10 @@ export default function App() {
     if (window.innerWidth < 768) {
         setMobileMenuOpen(false);
     }
+  };
+
+  const handleOpenGridView = () => {
+      openNote(VIEW_GRID);
   };
 
   const handleCreateNote = async () => {
@@ -1422,6 +1430,7 @@ export default function App() {
         { id: 'new-note', label: 'Create New Note', icon: <Plus size={16}/>, action: handleCreateNote, shortcut: 'Ctrl+Alt+N', group: 'Actions' },
         { id: 'daily-note', label: 'Open Daily Note', icon: <Calendar size={16}/>, action: handleOpenDailyNote, shortcut: 'Alt+D', group: 'Actions' },
         { id: 'random-note', label: 'Open Random Note', icon: <Shuffle size={16}/>, action: handleOpenRandomNote, shortcut: 'Alt+R', group: 'Actions' },
+        { id: 'grid-view', label: 'All Notes (Grid View)', icon: <LayoutGrid size={16}/>, action: handleOpenGridView, group: 'View' },
         { id: 'toggle-preview', label: 'Toggle Edit/Preview', icon: <Eye size={16}/>, action: handleTogglePreview, shortcut: 'Ctrl+E', group: 'View' },
         { id: 'split-view', label: 'Toggle Split View', icon: <Columns size={16}/>, action: toggleSplitView, shortcut: 'Ctrl+Shift+V', group: 'View' },
         { id: 'sync', label: 'Start Sync', icon: <RefreshCw size={16}/>, action: handleSync, shortcut: 'Ctrl+S', group: 'System' },
@@ -1498,6 +1507,38 @@ export default function App() {
       // カスタムイベントを発行して、Editor側に通知
       window.dispatchEvent(new Event('rhizonote-scroll-top'));
   }; 
+
+  const renderPaneContent = (paneId: string | null, isActive: boolean) => {
+      if (paneId === VIEW_GRID) {
+          return (
+              <GridView 
+                notes={notes} 
+                onSelectNote={(id) => openNote(id)} 
+              />
+          );
+      }
+      
+      const note = getNoteById(paneId);
+      if (note) {
+          return (
+            <Editor
+                note={note}
+                allNotes={notes}
+                onUpdate={handleUpdateNote}
+                onLinkClick={handleLinkClick}
+                onRefactorLinks={handleRefactorLinks}
+                onCreateNoteWithContent={handleCreateSpecificNote}
+                onMergeNotes={handleMergeNotes}
+                fontSize={fontSize}
+                isActive={isActive}
+                highlightedLine={highlightedLine}
+                searchQuery={pendingSearchQuery?.noteId === paneId ? pendingSearchQuery.query : undefined}
+            />
+          );
+      }
+      
+      return <EmptyState onCreate={handleCreateNote} />;
+  };
 
   return (
     <div 
@@ -1603,6 +1644,14 @@ export default function App() {
                 {/* Hide these on Mobile, Show on Desktop */}
                 <div className="hidden md:flex items-center">
                     <button
+                        onClick={handleOpenGridView}
+                        className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
+                        title="All Notes Grid"
+                    >
+                        <LayoutGrid size={18} />
+                    </button>
+
+                    <button
                         onClick={handleOpenDailyNote}
                         className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
                         title="Open Today's Note (Alt + D)"
@@ -1697,25 +1746,9 @@ export default function App() {
             onClick={() => setActivePaneIndex(0)}
             style={{ flex: panes[1] !== null ? splitRatio : 1 }}
           >
-            {getNoteById(panes[0]) ? (
-              <div className="flex flex-col h-full pb-20 md:pb-0">
-                <Editor
-                    note={getNoteById(panes[0])!}
-                    allNotes={notes}
-                    onUpdate={handleUpdateNote}
-                    onLinkClick={handleLinkClick}
-                    onRefactorLinks={handleRefactorLinks}
-                    onCreateNoteWithContent={handleCreateSpecificNote}
-                    onMergeNotes={handleMergeNotes}
-                    fontSize={fontSize}
-                    isActive={activePaneIndex === 0}
-                    highlightedLine={highlightedLine}
-                    searchQuery={pendingSearchQuery?.noteId === panes[0] ? pendingSearchQuery.query : undefined}
-                />
-              </div>
-            ) : (
-               <EmptyState onCreate={handleCreateNote} />
-            )}
+            <div className="flex flex-col h-full pb-20 md:pb-0">
+                {renderPaneContent(panes[0], activePaneIndex === 0)}
+            </div>
           </div>
 
           {panes[1] !== null && (
@@ -1731,33 +1764,23 @@ export default function App() {
                 onClick={() => setActivePaneIndex(1)}
                 style={{ flex: 1 - splitRatio }}
              >
-                {getNoteById(panes[1]) ? (
-                    <div className="flex flex-col h-full pb-24 md:pb-0">
-                        <Editor
-                            note={getNoteById(panes[1])!}
-                            allNotes={notes}
-                            onUpdate={handleUpdateNote}
-                            onLinkClick={handleLinkClick}
-                            onRefactorLinks={handleRefactorLinks}
-                            onCreateNoteWithContent={handleCreateSpecificNote}
-                            onMergeNotes={handleMergeNotes}
-                            fontSize={fontSize}
-                            isActive={activePaneIndex === 1}
-                            highlightedLine={highlightedLine}
-                            searchQuery={pendingSearchQuery?.noteId === panes[1] ? pendingSearchQuery.query : undefined}
-                        />
-                    </div>
-                ) : (
-                    <EmptyState onCreate={handleCreateNote} />
-                )}
+                <div className="flex flex-col h-full pb-24 md:pb-0">
+                    {renderPaneContent(panes[1], activePaneIndex === 1)}
+                </div>
              </div>
           )}
         </div>
       </div>
 
       {/* Mobile Bottom Toolbar */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 flex items-center justify-between px-6 pt-3 pb-5">
-        <div className="flex items-center gap-6">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 flex items-center justify-between px-4 pt-3 pb-5 gap-4">
+        <div className="flex items-center gap-5 overflow-x-auto no-scrollbar mask-linear-fade">
+            <button
+                onClick={handleOpenGridView}
+                className="text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+            >
+                <LayoutGrid size={24} strokeWidth={1.5} />
+            </button>
             <button
                 onClick={handleOpenDailyNote}
                 className="text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400"
@@ -1766,7 +1789,8 @@ export default function App() {
             </button>
             <button
                 onClick={() => setShowTasks(true)}
-                className="text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+                className="text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 shrink-0"
+                title="Tasks"
             >
                 <CheckSquare size={24} strokeWidth={1.5} />
             </button>
@@ -1782,34 +1806,25 @@ export default function App() {
             >
                 <Command size={24} strokeWidth={1.5} />
             </button>
-             <button
+            <button
                 onClick={handleSync}
                 disabled={!dropboxToken && !dropboxRefreshToken || syncStatus === 'syncing'}
-                className={`${
-                    (!dropboxToken && !dropboxRefreshToken)
-                        ? 'text-slate-300 dark:text-slate-600' 
-                        : syncStatus === 'error'
-                            ? 'text-red-500'
-                            : syncStatus === 'success'
-                                ? 'text-green-500'
-                                : 'text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
+                className={`shrink-0 transition-colors ${
+                    syncStatus === 'syncing' ? 'text-indigo-500 animate-spin' :
+                    syncStatus === 'error' ? 'text-red-500' :
+                    syncStatus === 'success' ? 'text-green-500' :
+                    'text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
                 }`}
+                title="Sync"
             >
-                {syncStatus === 'syncing' ? (
-                    <RefreshCw size={24} strokeWidth={1.5} className="animate-spin" />
-                ) : syncStatus === 'success' ? (
-                    <Check size={24} strokeWidth={1.5} />
-                ) : syncStatus === 'error' ? (
-                    <AlertCircle size={24} strokeWidth={1.5} />
-                ) : (
-                    <Cloud size={24} strokeWidth={1.5} />
-                )}
+                <Cloud size={24} strokeWidth={1.5} />
             </button>
         </div>
 
         <button
-            onClick={handleCreateNote}
-            className="w-12 h-12 flex items-center justify-center bg-indigo-600 text-white rounded-full shadow-lg shadow-indigo-600/30 active:scale-95 transition-transform"
+            onClick={() => handleCreateNote()}
+            className="w-12 h-12 flex items-center justify-center bg-indigo-600 text-white rounded-full shadow-lg shadow-indigo-600/30 active:scale-95 transition-transform shrink-0"
+            title="New Note"
         >
             <Plus size={24} />
         </button>

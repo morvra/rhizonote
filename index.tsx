@@ -11,7 +11,7 @@ if (!rootElement) {
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     // Determine the base path from Vite's env or default to root
-    const baseUrl = (import.meta.env && import.meta.env.BASE_URL) || '/';
+    const baseUrl = ((import.meta as any).env && (import.meta as any).env.BASE_URL) || '/';
     // Construct the path to sw.js. It resides in public/, so it will be at the root of the build.
     const swUrl = `${baseUrl}sw.js`.replace('//', '/');
 
