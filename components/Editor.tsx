@@ -14,6 +14,7 @@ interface EditorProps {
   fontSize: number;
   isActive?: boolean;
   highlightedLine?: { noteId: string; lineIndex: number } | null;
+  searchQuery?: string;
 }
 
 // Helper to extract [[links]] from content, ignoring code blocks
@@ -184,7 +185,7 @@ const renderMarkdown = (content: string, existingTitles?: Set<string>) => {
     return { __html: html };
 };
 
-const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, onRefactorLinks, onCreateNoteWithContent, onMergeNotes, fontSize, isActive = true, highlightedLine }) => {
+const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, onRefactorLinks, onCreateNoteWithContent, onMergeNotes, fontSize, isActive = true, highlightedLine, searchQuery }) => {
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -200,6 +201,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const [originalTitle, setOriginalTitle] = useState(note.title);
   const lastEditTimeRef = useRef<number>(0);
   const prevNoteIdRef = useRef(note.id);
+  
+  // Search Highlight State
+  const [activeSearchQuery, setActiveSearchQuery] = useState(searchQuery || '');
 
   // If the note ID changes, we must reset the local content immediately (during render) to avoid showing old content
   if (prevNoteIdRef.current !== note.id) {
@@ -207,7 +211,13 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       setOriginalTitle(note.title);
       setLocalContent(note.content);
       setLocalTitle(note.title);
+      // Reset active search query when note changes
+      setActiveSearchQuery(searchQuery || '');
   }
+
+  useEffect(() => {
+    setActiveSearchQuery(searchQuery || '');
+  }, [searchQuery, note.id]);
 
   // Handle external updates (e.g. Sync) to the *same* note
   useEffect(() => {
@@ -229,6 +239,10 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       setLocalContent(newContent);
       lastEditTimeRef.current = Date.now();
       onUpdate(note.id, { content: newContent });
+  };
+  
+  const clearSearchHighlight = () => {
+    if (activeSearchQuery) setActiveSearchQuery('');
   };
 
   // Duplicate detection
@@ -324,6 +338,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
   const lastHighlightRef = useRef<any>(null);
 
+  // Handle Highlight from Task Jump
   useEffect(() => {
     if (highlightedLine && highlightedLine !== lastHighlightRef.current && highlightedLine.noteId === note.id) {
         lastHighlightRef.current = highlightedLine;
@@ -347,6 +362,39 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         }, 50);
     }
   }, [highlightedLine, note.id, localContent]);
+
+  // Handle Auto-Scroll from Search Query
+  useEffect(() => {
+    if (searchQuery && textareaRef.current && mode === 'edit') {
+        const lowerContent = localContent.toLowerCase();
+        const lowerQuery = searchQuery.toLowerCase();
+        const index = lowerContent.indexOf(lowerQuery);
+        
+        if (index >= 0) {
+            // Use timeout to ensure this runs after the note switch reset effect
+            setTimeout(() => {
+                if (!textareaRef.current) return;
+
+                // Scroll Logic (Do NOT set selection range to avoid visual selection)
+                // 1. Focus
+                textareaRef.current.focus();
+                
+                // 2. Find line number to scroll backdrop view
+                const line = localContent.substring(0, index).split('\n').length - 1;
+                setCurrentLineIndex(line);
+                
+                // 3. Trigger Scroll
+                if (backdropRef.current) {
+                    const lineEl = backdropRef.current.querySelector(`[data-line="${line}"]`);
+                    if (lineEl) {
+                        lineEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                    }
+                }
+            }, 100);
+        }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, note.id]);
 
 
   const linkedNotesCount = useMemo(() => {
@@ -602,6 +650,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     const newCursorPos = e.target.selectionStart;
     
     updateContent(newVal);
+    clearSearchHighlight(); // Clear highlight on typing
     
     setCursorIndex(newCursorPos);
     prevSelectionRef.current = newCursorPos;
@@ -702,6 +751,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLTextAreaElement>) => {
+      clearSearchHighlight(); // Clear highlight on click
       if (textareaRef.current) {
           textareaRef.current.style.pointerEvents = 'none';
           const el = document.elementFromPoint(e.clientX, e.clientY);
@@ -739,6 +789,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
   // タッチ開始時の座標とカーソル位置を記録
   const handleTouchStart = (e: React.TouchEvent<HTMLTextAreaElement>) => {
+    clearSearchHighlight(); // Clear highlight on touch
     if (e.touches.length !== 1 || !textareaRef.current) return;
     if (textareaRef.current.selectionStart !== textareaRef.current.selectionEnd) {
         return;
@@ -871,6 +922,10 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const target = e.currentTarget;
+    
+    // Clear search highlight on any key press
+    clearSearchHighlight();
+
     // --- 太字 (Ctrl+B / Cmd+B) ---
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
         e.preventDefault();
@@ -1160,6 +1215,21 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     }
   };
 
+  // Helper to highlight search terms
+  const highlightSearch = (text: string, query?: string) => {
+      if (!query || !text) return text;
+      const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(${escapedQuery})`, 'gi');
+      const parts = text.split(regex);
+      if (parts.length === 1) return text;
+      
+      return parts.map((part, i) => 
+        regex.test(part) 
+            ? <mark key={i} className="bg-yellow-400/50 dark:bg-yellow-500/50 text-inherit rounded-sm">{part}</mark> 
+            : part
+      );
+  };
+
   const renderBackdrop = (content: string, activeLine: number) => {
       const lines = content.split('\n');
       const existingTitles = new Set(allNotes.filter(n => !n.deletedAt).map(n => n.title));
@@ -1174,18 +1244,18 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                     className="whitespace-pre-wrap break-words bg-transparent min-h-[1.5em] w-full text-slate-800 dark:text-slate-300"
                     data-line={index}
                 >
-                    {line || <br/>}
+                    {line ? highlightSearch(line, activeSearchQuery) : <br/>}
                 </div>
               );
           }
 
-          let contentNode: React.ReactNode = line;
+          let contentNode: React.ReactNode = highlightSearch(line, activeSearchQuery);
           const regex = /(`[^`]+`|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\[\[[^\]]+\]\]|https?:\/\/[^\s)]+)/g;
           const parts = line.split(regex);
           if (parts.length > 1) {
              contentNode = parts.map((part, i) => {
                  if (part.startsWith('`')) {
-                     return <span key={i} className="text-amber-600 dark:text-amber-200">{part}</span>;
+                     return <span key={i} className="text-amber-600 dark:text-amber-200">{highlightSearch(part, activeSearchQuery)}</span>;
                  }
                  if (part.startsWith('![') && part.includes('](') && part.endsWith(')')) {
                     const match = part.match(/!\[([^\]]*)\]\(([^)]+)\)/);
@@ -1194,14 +1264,14 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                         const url = match[2];
                         return (
                             <span key={i} className="text-amber-600 dark:text-amber-500 relative inline-block">
-                                {'!['}{alt}{']('}
+                                {'!['}{highlightSearch(alt, activeSearchQuery)}{']('}
                                 <span 
                                     className="underline decoration-amber-500 cursor-pointer pointer-events-auto relative z-10"
                                     data-url={url}
                                     data-line-index={index}
                                     data-image-preview={url}
                                 >
-                                    {url}
+                                    {highlightSearch(url, activeSearchQuery)}
                                 </span>
                                 {')'}
 
@@ -1226,7 +1296,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                             </span>
                         );
                     }
-                    return <span key={i} className="text-amber-600 dark:text-amber-500">{part}</span>;
+                    return <span key={i} className="text-amber-600 dark:text-amber-500">{highlightSearch(part, activeSearchQuery)}</span>;
                  }
                  if (part.startsWith('[') && !part.startsWith('[[') && part.includes('](') && part.endsWith(')')) {
                     const match = part.match(/\[([^\]]+)\]\(([^)]+)\)/);
@@ -1236,20 +1306,20 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                         return (
                             <span key={i} className="text-blue-600 dark:text-blue-400">
                                 {'['}
-                                <span className="text-blue-600 dark:text-blue-400">{text}</span>
+                                <span className="text-blue-600 dark:text-blue-400">{highlightSearch(text, activeSearchQuery)}</span>
                                 {']('}
                                 <span 
                                     className="underline decoration-blue-500 cursor-pointer pointer-events-auto relative"
                                     data-url={url}
                                     data-line-index={index}
                                 >
-                                    {url}
+                                    {highlightSearch(url, activeSearchQuery)}
                                 </span>
                                 {')'}
                             </span>
                         );
                     }
-                    return <span key={i} className="text-blue-600 dark:text-blue-400">{part}</span>;
+                    return <span key={i} className="text-blue-600 dark:text-blue-400">{highlightSearch(part, activeSearchQuery)}</span>;
                  }
                  if (part.startsWith('[[') && part.endsWith(']]')) {
                      const title = part.slice(2, -2);
@@ -1267,7 +1337,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                             data-link-title={title}
                             data-line-index={index}
                          >
-                             {part}
+                             {highlightSearch(part, activeSearchQuery)}
                          </span>
                      );
                  }
@@ -1279,11 +1349,11 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                             data-url={part}
                             data-line-index={index}
                          >
-                             {part}
+                             {highlightSearch(part, activeSearchQuery)}
                          </span>
                      );
                  }
-                 return <span key={i}>{part}</span>;
+                 return <span key={i}>{highlightSearch(part, activeSearchQuery)}</span>;
              });
           } else {
              if (line === '') contentNode = <br/>;

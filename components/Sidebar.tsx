@@ -9,7 +9,7 @@ interface SidebarProps {
   notes: Note[];
   folders: Folder[];
   activeNoteId: string | null;
-  onSelectNote: (id: string) => void;
+  onSelectNote: (id: string, query?: string) => void;
   onCreateNote: () => void;
   onCreateFolder: (parentId: string | null) => void;
   onDeleteNote: (id: string) => void;
@@ -34,14 +34,38 @@ interface SidebarProps {
 interface NoteItemProps {
   note: Note;
   activeNoteId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, query?: string) => void;
   onToggleBookmark: (id: string) => void;
   onDelete: (id: string) => void;
   onNoteDrop?: (sourceId: string, targetId: string) => void;
   isTrash?: boolean;
   onRestore?: (id: string) => void;
   onPermanentDelete?: (id: string) => void;
+  searchSnippet?: string;
 }
+
+// Helper to generate snippet
+const getSearchSnippet = (content: string, query: string) => {
+  if (!query || !content) return undefined;
+  const lowerContent = content.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  const index = lowerContent.indexOf(lowerQuery);
+  
+  if (index === -1) return undefined;
+
+  // Extract surrounding text
+  const start = Math.max(0, index - 15);
+  const end = Math.min(content.length, index + query.length + 30);
+  let snippet = content.slice(start, end);
+
+  // Replace newlines with spaces to keep it one line
+  snippet = snippet.replace(/[\n\r]+/g, ' ');
+
+  if (start > 0) snippet = '...' + snippet;
+  if (end < content.length) snippet = snippet + '...';
+  
+  return snippet;
+};
 
 const NoteItem: React.FC<NoteItemProps> = ({
   note,
@@ -52,7 +76,8 @@ const NoteItem: React.FC<NoteItemProps> = ({
   onNoteDrop,
   isTrash,
   onRestore,
-  onPermanentDelete
+  onPermanentDelete,
+  searchSnippet
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -100,9 +125,16 @@ const NoteItem: React.FC<NoteItemProps> = ({
       } ${isDragOver ? 'ring-2 ring-indigo-400 dark:ring-indigo-500' : ''}`}
       onClick={() => !isTrash && onSelect(note.id)}
     >
-      <div className="flex items-center gap-2 truncate w-full">
-        <FileText className="w-4 h-4 md:w-3.5 md:h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
-        <span className={`text-sm md:text-xs truncate font-medium ${isTrash ? 'line-through text-slate-400' : ''}`}>{note.title || 'Untitled'}</span>
+      <div className="flex flex-col w-full overflow-hidden">
+        <div className="flex items-center gap-2 truncate w-full">
+            <FileText className="w-4 h-4 md:w-3.5 md:h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
+            <span className={`text-sm md:text-xs truncate font-medium ${isTrash ? 'line-through text-slate-400' : ''}`}>{note.title || 'Untitled'}</span>
+        </div>
+        {searchSnippet && (
+            <div className="text-[10px] text-slate-400 dark:text-slate-500 pl-6 truncate w-full opacity-80">
+                {searchSnippet}
+            </div>
+        )}
       </div>
       
       {/* Action Icons - Absolute Positioned to avoid taking up space when hidden */}
@@ -533,9 +565,10 @@ const Sidebar: React.FC<SidebarProps> = ({
                             key={note.id}
                             note={note}
                             activeNoteId={activeNoteId}
-                            onSelect={onSelectNote}
+                            onSelect={(id) => onSelectNote(id, search)}
                             onToggleBookmark={onToggleBookmark}
                             onDelete={onDeleteNote}
+                            searchSnippet={getSearchSnippet(note.content, search)}
                         />
                     ))}
                 </div>

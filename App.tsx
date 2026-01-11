@@ -228,6 +228,9 @@ export default function App() {
   
   // Highlighted line for jump-to-task
   const [highlightedLine, setHighlightedLine] = useState<{ noteId: string; lineIndex: number } | null>(null);
+  
+  // Active Search Query for auto-scroll
+  const [pendingSearchQuery, setPendingSearchQuery] = useState<{noteId: string, query: string} | null>(null);
 
   const dailyPrefs = useMemo(() => {
       try {
@@ -705,7 +708,7 @@ export default function App() {
       addUnsyncedId(noteId);
   };
 
-  const openNote = (id: string) => {
+  const openNote = (id: string, query?: string) => {
     setPanes(prev => {
         const newPanes = [...prev];
         newPanes[activePaneIndex] = id;
@@ -732,6 +735,13 @@ export default function App() {
         }
         return newHistory;
     });
+    
+    // If opening via search, set the pending query
+    if (query) {
+        setPendingSearchQuery({ noteId: id, query });
+    } else {
+        setPendingSearchQuery(null);
+    }
     
     if (window.innerWidth < 768) {
         setMobileMenuOpen(false);
@@ -1417,9 +1427,9 @@ export default function App() {
         onClose={() => setIsCommandPaletteOpen(false)} 
         commands={commands} 
         notes={notes}
-        onSelectNote={(id) => {
+        onSelectNote={(id, query) => {
              setHighlightedLine(null); // ハイライトをリセット
-             openNote(id);
+             openNote(id, query);
         }}
       />
 
@@ -1430,9 +1440,9 @@ export default function App() {
         notes={notes}
         folders={folders}
         activeNoteId={activeNoteId}
-        onSelectNote={(id) => {
+        onSelectNote={(id, query) => {
             setHighlightedLine(null);
-            openNote(id);
+            openNote(id, query);
         }}
         onCreateNote={handleCreateNote}
         onCreateFolder={handleCreateFolder}
@@ -1606,6 +1616,7 @@ export default function App() {
                     fontSize={fontSize}
                     isActive={activePaneIndex === 0}
                     highlightedLine={highlightedLine}
+                    searchQuery={pendingSearchQuery?.noteId === panes[0] ? pendingSearchQuery.query : undefined}
                 />
               </div>
             ) : (
@@ -1639,6 +1650,7 @@ export default function App() {
                             fontSize={fontSize}
                             isActive={activePaneIndex === 1}
                             highlightedLine={highlightedLine}
+                            searchQuery={pendingSearchQuery?.noteId === panes[1] ? pendingSearchQuery.query : undefined}
                         />
                     </div>
                 ) : (

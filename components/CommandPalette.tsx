@@ -16,7 +16,7 @@ interface CommandPaletteProps {
   onClose: () => void;
   commands: CommandItem[];
   notes?: Note[];
-  onSelectNote?: (id: string) => void;
+  onSelectNote?: (id: string, query?: string) => void;
 }
 
 const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, commands, notes, onSelectNote }) => {
@@ -55,7 +55,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, comman
         label: n.title || 'Untitled',
         icon: <FileText size={16} />,
         group: 'Notes',
-        action: () => onSelectNote(n.id)
+        action: () => onSelectNote(n.id, query)
       }));
   }, [query, notes, onSelectNote]);
 
