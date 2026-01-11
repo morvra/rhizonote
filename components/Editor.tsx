@@ -204,7 +204,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   
   // -- Debounce Logic --
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const latestLocalContentRef = useRef(note.content); // Track for async save/cleanup
+  const latestContentRef = useRef(note.content);
+  const latestTitleRef = useRef(note.title);
 
   // Search Highlight State
   const [activeSearchQuery, setActiveSearchQuery] = useState(searchQuery || '');
@@ -214,25 +215,58 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       prevNoteIdRef.current = note.id;
       setOriginalTitle(note.title);
       setLocalContent(note.content);
-      latestLocalContentRef.current = note.content;
+      latestContentRef.current = note.content;
       setLocalTitle(note.title);
+      latestTitleRef.current = note.title;
       // Reset active search query when note changes
       setActiveSearchQuery(searchQuery || '');
   }
 
-  // Keep ref in sync for cleanup function
+  // Keep refs in sync for cleanup/save function
   useEffect(() => {
-      latestLocalContentRef.current = localContent;
+      latestContentRef.current = localContent;
   }, [localContent]);
+
+  useEffect(() => {
+      latestTitleRef.current = localTitle;
+  }, [localTitle]);
+
+  // Helper to save immediately (flush changes)
+  const saveNow = () => {
+      if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+          saveTimeoutRef.current = null;
+      }
+      onUpdate(note.id, { 
+          title: latestTitleRef.current,
+          content: latestContentRef.current 
+      });
+  };
+
+  // Helper to trigger debounced save
+  const triggerDebouncedSave = () => {
+      lastEditTimeRef.current = Date.now();
+      if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+      }
+      saveTimeoutRef.current = setTimeout(saveNow, 1000); // 1 second debounce
+  };
 
   // Cleanup: Save pending changes when note changes or component unmounts
   useEffect(() => {
       const currentNoteId = note.id;
+      // Capture values at unmount time for the cleanup closure
+      const contentToSave = latestContentRef;
+      const titleToSave = latestTitleRef;
+      
       return () => {
           if (saveTimeoutRef.current) {
               clearTimeout(saveTimeoutRef.current);
-              // Save the content that was in the buffer for this note
-              onUpdate(currentNoteId, { content: latestLocalContentRef.current });
+              // Save pending changes for the note that is being unmounted/switched away from
+              onUpdate(currentNoteId, { 
+                  title: titleToSave.current, 
+                  content: contentToSave.current 
+              });
           }
       };
   }, [note.id, onUpdate]);
@@ -248,31 +282,25 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
           const timeSinceEdit = Date.now() - lastEditTimeRef.current;
           if (note.content !== localContent && timeSinceEdit > 2000) {
               setLocalContent(note.content);
-              latestLocalContentRef.current = note.content;
+              latestContentRef.current = note.content;
           }
           // 外部データとローカルが異なり、かつ直近(2秒以内)で編集していない場合のみ反映
           if (note.title !== localTitle && timeSinceEdit > 2000) {
               setLocalTitle(note.title);
+              latestTitleRef.current = note.title;
           }
       }
   }, [note.content, note.title, note.id, localContent, localTitle]);
 
-  // Helper to update both local state and persist to DB (Debounced)
+  // Update handlers
   const updateContent = (newContent: string) => {
-      // 1. Instant Local Update
       setLocalContent(newContent);
-      lastEditTimeRef.current = Date.now();
+      triggerDebouncedSave();
+  };
 
-      // 2. Clear existing timer
-      if (saveTimeoutRef.current) {
-          clearTimeout(saveTimeoutRef.current);
-      }
-
-      // 3. Set new debounced timer
-      saveTimeoutRef.current = setTimeout(() => {
-          onUpdate(note.id, { content: newContent });
-          saveTimeoutRef.current = null;
-      }, 1000); // 1 second debounce
+  const updateTitle = (newTitle: string) => {
+      setLocalTitle(newTitle);
+      triggerDebouncedSave();
   };
   
   const clearSearchHighlight = () => {
@@ -1457,13 +1485,12 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 value={localTitle}
                 onChange={(e) => {
                     const newTitle = e.target.value;
-                    setLocalTitle(newTitle);
-                    lastEditTimeRef.current = Date.now();
-                    onUpdate(note.id, { title: newTitle });
+                    updateTitle(newTitle);
                     // 高さの自動調整
                     e.target.style.height = 'auto';
                     e.target.style.height = e.target.scrollHeight + 'px';
                 }}
+                onBlur={saveNow}
                 ref={(el) => {
                     if (el) {
                         el.style.height = 'auto';
@@ -1614,11 +1641,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 onKeyUp={handleKeyUp}
                 onBlur={() => {
                     setSelectionMenu(null);
-                    if (saveTimeoutRef.current) {
-                        clearTimeout(saveTimeoutRef.current);
-                        onUpdate(note.id, { content: localContent });
-                        saveTimeoutRef.current = null;
-                    }
+                    saveNow();
                 }}
                 className={`absolute inset-0 w-full h-full px-8 pt-4 pb-12 bg-transparent caret-indigo-600 dark:caret-slate-200 font-sans resize-none focus:outline-none overflow-hidden z-10 text-transparent`}
                 style={{ fontSize: `${fontSize}px`, lineHeight: 1.6 }}
