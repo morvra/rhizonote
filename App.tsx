@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import Editor from './components/Editor';
@@ -1353,6 +1354,10 @@ export default function App() {
             e.preventDefault();
             handleOpenRandomNote();
         }
+        if (e.altKey && e.key.toLowerCase() === 'g') {
+            e.preventDefault();
+            handleOpenGridView();
+        }
         if (isMod && e.key.toLowerCase() === 's') {
             e.preventDefault(); 
             handleSync();
@@ -1430,7 +1435,7 @@ export default function App() {
         { id: 'new-note', label: 'Create New Note', icon: <Plus size={16}/>, action: handleCreateNote, shortcut: 'Ctrl+Alt+N', group: 'Actions' },
         { id: 'daily-note', label: 'Open Daily Note', icon: <Calendar size={16}/>, action: handleOpenDailyNote, shortcut: 'Alt+D', group: 'Actions' },
         { id: 'random-note', label: 'Open Random Note', icon: <Shuffle size={16}/>, action: handleOpenRandomNote, shortcut: 'Alt+R', group: 'Actions' },
-        { id: 'grid-view', label: 'All Notes (Grid View)', icon: <LayoutGrid size={16}/>, action: handleOpenGridView, group: 'View' },
+        { id: 'grid-view', label: 'All Notes (Grid View)', icon: <LayoutGrid size={16}/>, action: handleOpenGridView, shortcut: 'Alt+G', group: 'View' },
         { id: 'toggle-preview', label: 'Toggle Edit/Preview', icon: <Eye size={16}/>, action: handleTogglePreview, shortcut: 'Ctrl+E', group: 'View' },
         { id: 'split-view', label: 'Toggle Split View', icon: <Columns size={16}/>, action: toggleSplitView, shortcut: 'Ctrl+Shift+V', group: 'View' },
         { id: 'sync', label: 'Start Sync', icon: <RefreshCw size={16}/>, action: handleSync, shortcut: 'Ctrl+S', group: 'System' },
@@ -1817,7 +1822,7 @@ export default function App() {
                 }`}
                 title="Sync"
             >
-                <Cloud size={24} strokeWidth={1.5} />
+                <RefreshCw size={24} strokeWidth={1.5} />
             </button>
         </div>
 
@@ -2111,6 +2116,7 @@ export default function App() {
                      <ShortcutRow keys={['Ctrl', '\\']} description="Toggle Sidebar" />
                      <ShortcutRow keys={['Ctrl', 'Shift', 'V']} description="Toggle Split View" />
                      <ShortcutRow keys={['Ctrl', '?']} description="Show Shortcuts" />
+                     <ShortcutRow keys={['Alt', 'G']} description="Open Grid View" />
                      <ShortcutRow keys={['Alt', 'D']} description="Open Daily Note" />
                      <ShortcutRow keys={['Alt', 'T']} description="Toggle Task List" />
                      <ShortcutRow keys={['Alt', 'R']} description="Open Random Note" />

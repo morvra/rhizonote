@@ -131,7 +131,7 @@ const GridView: React.FC<GridViewProps> = ({ notes, onSelectNote }) => {
                     <div 
                         key={note.id}
                         onClick={() => onSelectNote(note.id)}
-                        className="group bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden cursor-pointer hover:shadow-lg hover:border-indigo-300 dark:hover:border-indigo-700 transition-all duration-200 flex flex-col h-[160px]"
+                        className="group bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden cursor-pointer hover:shadow-lg hover:border-indigo-300 dark:hover:border-indigo-700 transition-all duration-200 flex flex-col h-[180px]"
                     >
                         {thumbnail && (
                              <div className="h-20 w-full bg-gray-100 dark:bg-slate-950 shrink-0 relative overflow-hidden">
@@ -145,7 +145,7 @@ const GridView: React.FC<GridViewProps> = ({ notes, onSelectNote }) => {
                         )}
                         
                         <div className="p-3 flex flex-col flex-1 min-h-0">
-                            <h3 className="font-bold text-slate-800 dark:text-slate-200 text-sm mb-1 line-clamp-2 leading-tight group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                            <h3 className="font-bold text-slate-800 dark:text-slate-200 text-sm mb-1 line-clamp-2 leading-snug group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors break-words">
                                 {note.title || 'Untitled'}
                             </h3>
                             <p className={`text-xs text-slate-500 dark:text-slate-400 leading-relaxed break-words ${thumbnail ? 'line-clamp-2' : 'line-clamp-6'}`}>
