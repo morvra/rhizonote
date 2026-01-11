@@ -410,8 +410,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   }, []);
 
   // -- Tracked ID for State Reset --
-  // Using state instead of ref for ID tracking ensures that resets happen 
-  // consistently within the React render cycle, avoiding StrictMode double-invocation issues.
   const [trackedId, setTrackedId] = useState(note.id);
 
   // -- Content State Management --
@@ -427,13 +425,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const [activeSearchQuery, setActiveSearchQuery] = useState(searchQuery || '');
 
   // Derived values for current render cycle
-  // If we detected a note switch (trackedId !== note.id), we must use the NEW note's data
-  // immediately for rendering to avoid flashing old content, even before the state updates process.
-  
-  // Logic to determine if we are in a "switching" state or stable state
   const isSwitching = trackedId !== note.id;
 
-  // Real-time values (for UI input, duplicate check, backdrop)
   const displayTitle = isSwitching ? note.title : localTitle;
   const displayContent = isSwitching ? note.content : localContent;
   const displaySearchQuery = isSwitching ? (searchQuery || '') : activeSearchQuery;
@@ -517,17 +510,12 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   // Cleanup: Save pending changes when note changes or component unmounts
   useEffect(() => {
       const currentNoteId = note.id;
-      // Capture values at unmount time for the cleanup closure
-      // Note: We use the refs which are updated via useEffect([localContent]).
-      // When switching notes, the cleanup runs BEFORE the new note's effect updates these refs,
-      // ensuring we save the OLD note's content.
       const contentToSave = latestContentRef;
       const titleToSave = latestTitleRef;
       
       return () => {
           if (saveTimeoutRef.current) {
               clearTimeout(saveTimeoutRef.current);
-              // Save pending changes for the note that is being unmounted/switched away from
               onUpdate(currentNoteId, { 
                   title: titleToSave.current, 
                   content: contentToSave.current 
@@ -562,7 +550,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
   // Handle external updates (e.g. Sync) to the *same* note
   useEffect(() => {
-      // If content is different and we haven't edited locally recently (buffer for debounce/lag)
       if (note.id === trackedId) {
           const timeSinceEdit = Date.now() - lastEditTimeRef.current;
           if (note.content !== localContent && timeSinceEdit > 2000) {
@@ -570,7 +557,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
               setDebouncedContent(note.content);
               latestContentRef.current = note.content;
           }
-          // 外部データとローカルが異なり、かつ直近(2秒以内)で編集していない場合のみ反映
           if (note.title !== localTitle && timeSinceEdit > 2000) {
               setLocalTitle(note.title);
               setDebouncedTitle(note.title);
@@ -578,6 +564,32 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
           }
       }
   }, [note.content, note.title, note.id, localContent, localTitle, trackedId]);
+
+  // Listen for template insert events
+  useEffect(() => {
+    if (!isActive) return;
+
+    const handleInsertText = (e: CustomEvent<string>) => {
+        if (!textareaRef.current) return;
+        const textToInsert = e.detail;
+        
+        const start = textareaRef.current.selectionStart;
+        const end = textareaRef.current.selectionEnd;
+        const currentValue = textareaRef.current.value;
+        
+        const newValue = currentValue.substring(0, start) + textToInsert + currentValue.substring(end);
+        
+        setLocalContent(newValue);
+        triggerDebouncedSave();
+        
+        // Restore cursor after insertion
+        pendingCursorRef.current = start + textToInsert.length;
+        textareaRef.current.focus();
+    };
+
+    window.addEventListener('rhizonote-insert-text', handleInsertText as EventListener);
+    return () => window.removeEventListener('rhizonote-insert-text', handleInsertText as EventListener);
+  }, [isActive, localContent]);
 
   // Update handlers
   const updateContent = (newContent: string) => {
@@ -742,21 +754,17 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   }, [analysisContent, analysisTitle, allNotes, note.id]);
 
   const linkCandidates = useMemo(() => {
-    // 1. まずは既存のノートを候補に入れる
     const candidates = [...allNotes];
     const existingTitles = new Set(allNotes.map(n => n.title));
     const seenGhostTitles = new Set<string>();
 
-    // 2. 全ノート(削除済み除く)の本文を走査して、[[リンク]] を抽出する
     allNotes.forEach(n => {
         if (n.deletedAt) return;
 
         const links = extractLinks(n.content);
         links.forEach(link => {
-            // まだノートが存在せず、かつリストに追加していない場合
             if (!existingTitles.has(link) && !seenGhostTitles.has(link)) {
                 seenGhostTitles.add(link);
-                // 擬似的なノートオブジェクトを作成して追加
                 candidates.push({
                     id: `ghost-${link}`,
                     title: link,
@@ -765,7 +773,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                     isBookmarked: false,
                     updatedAt: 0,
                     createdAt: 0,
-                    isGhost: true // WikiLinkPopup側で区別できるようにフラグを立てる
+                    isGhost: true
                 } as Note);
             }
         });
@@ -793,18 +801,15 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   useEffect(() => {
     if (highlightedLine && highlightedLine.noteId === note.id) {
         const timer = setTimeout(() => {
-            // 行番号を取得
             const targetLine = highlightedLine.lineIndex;
-            // 現在のアクティブ行として設定（背景ハイライトのため）
             setCurrentLineIndex(targetLine);
-            // Backdrop内の該当要素を探してスクロール
             if (backdropRef.current) {
                 const lineEl = backdropRef.current.querySelector(`[data-line="${targetLine}"]`);
                 if (lineEl) {
                     lineEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
                 }
             }
-        }, 100); // 100msの遅延
+        }, 100);
 
         return () => clearTimeout(timer);
     }
@@ -892,7 +897,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const handleMouseMove = (e: React.MouseEvent<HTMLTextAreaElement>) => {
       if (!textareaRef.current) return;
       
-      // テキストエリアのポインターイベントを一瞬無効化して、背面の要素を取得するハック
       textareaRef.current.style.pointerEvents = 'none';
       const el = document.elementFromPoint(e.clientX, e.clientY);
       textareaRef.current.style.pointerEvents = 'auto';
@@ -901,21 +905,17 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       let newHoveredImage = null;
 
       if (el) {
-          // リンクタイトルの判定
           if (el.hasAttribute('data-link-title') || el.hasAttribute('data-url')) {
               cursor = 'pointer';
           }
           
-          // 画像プレビュー対象かどうかの判定 (data-image-preview属性を確認)
           const imgUrl = el.getAttribute('data-image-preview');
           if (imgUrl) {
               newHoveredImage = imgUrl;
           }
       }
       
-      // カーソルスタイルの適用
       if (textareaRef.current.style.cursor !== cursor) textareaRef.current.style.cursor = cursor;
-      // ホバー中の画像状態を更新（変更があった場合のみ再レンダリング）
       if (hoveredImageUrl !== newHoveredImage) {
           setHoveredImageUrl(newHoveredImage);
       }
@@ -1016,7 +1016,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     }
   };
 
-  // タッチ開始時の座標とカーソル位置を記録
   const handleTouchStart = (e: React.TouchEvent<HTMLTextAreaElement>) => {
     clearSearchHighlight(); // Clear highlight on touch
     if (e.touches.length !== 1 || !textareaRef.current) return;
@@ -1029,11 +1028,10 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         startX: touch.clientX,
         startY: touch.clientY,
         startSelection: textareaRef.current.selectionStart,
-        active: false // まだスワイプ動作とは確定していない
+        active: false 
     };
   };
 
-  // タッチ移動時の計算（横移動ならカーソル操作、縦ならスクロール）
   const handleTouchMove = (e: React.TouchEvent<HTMLTextAreaElement>) => {
     if (!touchCursorRef.current || !textareaRef.current) return;
 
@@ -1041,45 +1039,36 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     const deltaX = touch.clientX - touchCursorRef.current.startX;
     const deltaY = touch.clientY - touchCursorRef.current.startY;
 
-    // まだカーソルモードになっていない場合、判定を行う
     if (!touchCursorRef.current.active) {
-        // 横移動が10px以上、かつ縦移動よりも明らかに大きい場合、カーソルモードとみなす
         if (Math.abs(deltaX) > 10 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
             touchCursorRef.current.active = true;
         } else if (Math.abs(deltaY) > 10) {
-            // 縦移動が大きい場合はスクロールとみなし、追跡をキャンセル
             touchCursorRef.current = null;
             return;
         }
     }
 
-    // カーソルモード中の処理
     if (touchCursorRef.current?.active) {
-        // ブラウザの「戻る/進む」やスクロールを防ぐ
         if (e.cancelable) e.preventDefault();
 
-        // 感度調整: 12pxにつき1文字移動
         const charsMove = Math.round(deltaX / 12);
         const newPos = Math.max(0, Math.min(displayContent.length, touchCursorRef.current.startSelection + charsMove));
 
         if (textareaRef.current.selectionStart !== newPos) {
             textareaRef.current.setSelectionRange(newPos, newPos);
             
-            // UI更新（行ハイライトなど）
             const line = displayContent.substring(0, newPos).split('\n').length - 1;
             setCurrentLineIndex(line);
             setCursorIndex(newPos);
             
-            // 選択メニューなどを閉じる
             setSelectionMenu(null);
         }
     }
   };
 
-  // タッチ終了時のクリーンアップ
   const handleTouchEnd = () => {
     touchCursorRef.current = null;
-    handleMouseUp(); // 既存のhandleMouseUp（オートコンプリートチェック等）も呼ぶ
+    handleMouseUp(); 
   };
   
   const handleWrapText = (wrapper: string) => {
@@ -1150,57 +1139,35 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const target = e.currentTarget;
+    const target = e.currentTarget as HTMLTextAreaElement;
     
     // Clear search highlight on any key press
     clearSearchHighlight();
 
-    // --- 太字 (Ctrl+B / Cmd+B) ---
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
         e.preventDefault();
         const start = target.selectionStart;
         const end = target.selectionEnd;
-        
-        // テキストが選択されている場合のみ実行
         if (start !== end) {
             const text = target.value.substring(start, end);
             const wrapper = '**';
-            
-            // 前後に ** を追加して更新
             const newValue = target.value.substring(0, start) + wrapper + text + wrapper + target.value.substring(end);
             updateContent(newValue);
-            
-            // 更新後に選択範囲を維持するための処理
-            // 文字数が4文字（**と**）増えるため、選択範囲も調整します
-            pendingSelectionRef.current = { 
-                start: start, 
-                end: end + 4 
-            };
+            pendingSelectionRef.current = { start: start, end: end + 4 };
         }
         return;
     }
 
-    // --- 斜体 (Ctrl+I / Cmd+I) ---
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'i') {
         e.preventDefault();
         const start = target.selectionStart;
         const end = target.selectionEnd;
-        
-        // テキストが選択されている場合のみ実行
         if (start !== end) {
             const text = target.value.substring(start, end);
             const wrapper = '*';
-            
-            // 前後に * を追加して更新
             const newValue = target.value.substring(0, start) + wrapper + text + wrapper + target.value.substring(end);
             updateContent(newValue);
-            
-            // 更新後に選択範囲を維持するための処理
-            // 文字数が2文字（*と*）増えるため、選択範囲も調整します
-            pendingSelectionRef.current = { 
-                start: start, 
-                end: end + 2 
-            };
+            pendingSelectionRef.current = { start: start, end: end + 2 };
         }
         return;
     }
@@ -1320,63 +1287,41 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         const end = target.selectionEnd;
         const value = target.value;
 
-        // 1. 選択範囲が含まれる「行の範囲」を特定する
         const startLineStart = value.lastIndexOf('\n', start - 1) + 1;
         let endLineEnd = value.indexOf('\n', end);
         if (endLineEnd === -1) endLineEnd = value.length;
 
-        // 末尾が改行文字ちょうどの場合の調整
-        if (end > start && value[end - 1] === '\n' && endLineEnd === end - 1) {
-             // 必要であればここで調整（現状はそのままでOK）
-        }
-
-        // 2. 影響を受ける行だけを配列として取り出す
         const activeLines = value.substring(startLineStart, endLineEnd).split('\n');
 
         if (e.shiftKey) {
-            // --- Shift + Tab (アンインデント: 削除) ---
             const newLines = activeLines.map(line => {
                 if (line.startsWith('  ')) return line.substring(2);
                 if (line.startsWith('\t')) return line.substring(1);
                 return line;
             });
-
             const newBlock = newLines.join('\n');
             const newValue = value.substring(0, startLineStart) + newBlock + value.substring(endLineEnd);
-
             updateContent(newValue);
-
             if (start === end) {
-                // 選択なし（カーソルのみ）：カーソル位置を調整して選択はしない
                 const deletedLength = activeLines[0].length - newLines[0].length;
                 pendingCursorRef.current = Math.max(startLineStart, start - deletedLength);
             } else {
-                // 範囲選択あり：行全体を選択状態で維持する
                 pendingSelectionRef.current = {
                     start: startLineStart,
                     end: startLineStart + newBlock.length
                 };
             }
-
         } else {
-            // --- Tab (インデント: 追加) ---
-
             if (start === end) {
-                // 選択なし（カーソルのみ）：行頭にスペースを挿入する
                 const newValue = value.substring(0, startLineStart) + '  ' + value.substring(startLineStart);
                 updateContent(newValue);
                 pendingCursorRef.current = start + 2;
                 return;
             }
-
-            // 範囲選択あり：選択された行すべてのアタマにスペースを追加
             const newLines = activeLines.map(line => '  ' + line);
             const newBlock = newLines.join('\n');
             const newValue = value.substring(0, startLineStart) + newBlock + value.substring(endLineEnd);
-            
             updateContent(newValue);
-            
-            // 選択範囲を行全体に広げて維持する
             pendingSelectionRef.current = {
                 start: startLineStart,
                 end: startLineStart + newBlock.length
@@ -1498,7 +1443,6 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 onChange={(e) => {
                     const newTitle = e.target.value;
                     updateTitle(newTitle);
-                    // 高さの自動調整
                     e.target.style.height = 'auto';
                     e.target.style.height = e.target.scrollHeight + 'px';
                 }}

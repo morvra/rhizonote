@@ -77,7 +77,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, comman
   });
 
   // Define group order priority - Reordered: Notes -> Bookmarks -> Actions
-  const groupOrder = ['Notes', 'Bookmarks', 'Actions', 'View', 'Export', 'System'];
+  const groupOrder = ['Notes', 'Bookmarks', 'Actions', 'View', 'Templates', 'Export', 'System'];
 
   // Sort groups based on priority, then alphabetical
   const sortedGroupKeys = Object.keys(groupedCommands).sort((a, b) => {

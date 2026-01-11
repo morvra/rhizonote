@@ -4,7 +4,7 @@ import Editor from './components/Editor';
 import CommandPalette, { CommandItem } from './components/CommandPalette';
 import { Note, Folder, SortField, SortDirection, Theme } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS } from './constants';
-import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle, Shuffle, Eye, Bookmark, Terminal, Download, Trash, FileJson } from 'lucide-react';
+import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle, Shuffle, Eye, Bookmark, Terminal, Download, Trash, FileJson, LayoutTemplate, FileInput } from 'lucide-react';
 import { getDropboxAuthUrl, parseAuthTokenFromUrl, syncDropboxData, getNotePath, getFolderPath, RenameOperation, exchangeCodeForToken } from './utils/dropboxService';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
@@ -26,6 +26,7 @@ const LS_KEY_SORT = 'rhizonote_sort';
 const LS_KEY_EXPANDED = 'rhizonote_expanded';
 const LS_KEY_UI_SETTINGS = 'rhizonote_ui_settings';
 const LS_KEY_DAILY_PREFS = 'rhizonote_daily_prefs';
+const LS_KEY_TEMPLATE_PREFS = 'rhizonote_template_prefs';
 const LS_KEY_DELETED_PATHS = 'rhizonote_deleted_paths';
 const LS_KEY_PENDING_RENAMES = 'rhizonote_pending_renames';
 const LS_KEY_UNSYNCED_IDS = 'rhizonote_unsynced_ids';
@@ -35,22 +36,40 @@ const formatDate = (date: Date, format: string) => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const shortDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     
+    const pad = (n: number) => String(n).padStart(2, '0');
+
     const map: Record<string, string> = {
         'YYYY': date.getFullYear().toString(),
-        'MM': String(date.getMonth() + 1).padStart(2, '0'),
-        'DD': String(date.getDate()).padStart(2, '0'),
+        'MM': pad(date.getMonth() + 1),
+        'DD': pad(date.getDate()),
+        'HH': pad(date.getHours()),
+        'mm': pad(date.getMinutes()),
+        'ss': pad(date.getSeconds()),
         'dddd': days[date.getDay()],
         'ddd': shortDays[date.getDay()],
     };
 
-    return format.replace(/YYYY|MM|DD|dddd|ddd/g, (matched) => map[matched]);
+    // Replace mapped tokens
+    let result = format.replace(/YYYY|MM|DD|HH|mm|ss|dddd|ddd/g, (matched) => map[matched]);
+    return result;
 };
 
 // Process template with date offsets (e.g. {{date+1d:YYYY-MM-DD}})
 const processTemplate = (template: string, title: string) => {
     let result = template.replace(/\{\{title\}\}/g, title);
-    result = result.replace(/\{\{date([+-]\d+[dmy])?:(.*?)\}\}/gi, (_, offset, format) => {
+
+    // Handle {{date}}, {{time}} shortcuts
+    result = result.replace(/\{\{date\}\}/gi, formatDate(new Date(), 'YYYY-MM-DD'));
+    result = result.replace(/\{\{time\}\}/gi, formatDate(new Date(), 'HH:mm'));
+
+    // Handle complex date patterns: {{date+1d:YYYY-MM-DD}} or {{date:YYYY-MM-DD}}
+    // Regex matches:
+    // 1. optional offset (+1d, -2m, etc.)
+    // 2. optional format string starting with :
+    result = result.replace(/\{\{date([+-]\d+[dmy])?(?::(.*?))?\}\}/gi, (_, offset, format) => {
         const d = new Date();
+        
+        // Apply Offset
         if (offset) {
             const operator = offset.charAt(0); // + or -
             const numStr = offset.slice(1, -1);
@@ -61,8 +80,12 @@ const processTemplate = (template: string, title: string) => {
             if (unit === 'm') d.setMonth(d.getMonth() + num);
             if (unit === 'y') d.setFullYear(d.getFullYear() + num);
         }
-        return formatDate(d, format);
+
+        // Apply Format (Default to YYYY-MM-DD if not specified)
+        const fmt = format || 'YYYY-MM-DD';
+        return formatDate(d, fmt);
     });
+
     return result;
 };
 
@@ -130,9 +153,6 @@ export default function App() {
             });
             
             localStorage.setItem(LS_KEY_MIGRATED, 'true');
-            // Clean up old data to free space, but maybe wait a bit in a real app
-            // localStorage.removeItem(LS_KEY_NOTES);
-            // localStorage.removeItem(LS_KEY_FOLDERS);
         }
     };
     migrate();
@@ -193,8 +213,7 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [syncMessage, setSyncMessage] = useState('');
 
-  // 未同期の変更を追跡 (Initialize from localStorage)
-  // Use a nullable ref for initialization check to avoid TS errors
+  // Unsynced IDs
   const unsyncedNoteIdsRef = useRef<Set<string> | null>(null);
   if (unsyncedNoteIdsRef.current === null) {
       try {
@@ -204,10 +223,8 @@ export default function App() {
           unsyncedNoteIdsRef.current = new Set<string>();
       }
   }
-  // Cast to non-null for usage
   const unsyncedNoteIds = unsyncedNoteIdsRef as React.MutableRefObject<Set<string>>;
 
-  // Helper to update unsynced IDs and persist
   const addUnsyncedId = (id: string) => {
       unsyncedNoteIds.current.add(id);
       localStorage.setItem(LS_KEY_UNSYNCED_IDS, JSON.stringify(Array.from(unsyncedNoteIds.current)));
@@ -218,21 +235,21 @@ export default function App() {
       localStorage.removeItem(LS_KEY_UNSYNCED_IDS);
   };
   
-  // 最終編集時刻を追跡（自動同期の抑制に使用）
   const lastEditTimeRef = useRef<number>(0);
 
   const [recentlyCompletedTasks, setRecentlyCompletedTasks] = useState<Set<string>>(new Set());
   
-  // Task Selection for Keyboard Navigation
+  // Task Selection
   const [taskSelectedIndex, setTaskSelectedIndex] = useState(0);
   const taskListRef = useRef<HTMLDivElement>(null);
   
-  // Highlighted line for jump-to-task
+  // Highlighted line
   const [highlightedLine, setHighlightedLine] = useState<{ noteId: string; lineIndex: number } | null>(null);
   
-  // Active Search Query for auto-scroll
+  // Active Search Query
   const [pendingSearchQuery, setPendingSearchQuery] = useState<{noteId: string, query: string} | null>(null);
 
+  // Daily Preferences
   const dailyPrefs = useMemo(() => {
       try {
           return JSON.parse(localStorage.getItem(LS_KEY_DAILY_PREFS) || '{}');
@@ -242,6 +259,16 @@ export default function App() {
   const [dailyNoteFormat, setDailyNoteFormat] = useState(dailyPrefs.format || 'YYYY-MM-DD');
   const [dailyNoteFolderId, setDailyNoteFolderId] = useState<string>(dailyPrefs.folderId || ''); 
   const [dailyNoteTemplate, setDailyNoteTemplate] = useState(dailyPrefs.template || '# {{title}}\n\n<< [[{{date-1d:YYYY-MM-DD}}]] | [[{{date+1d:YYYY-MM-DD}}]] >>\n\n## Tasks\n- [ ] ');
+
+  // Template Preferences
+  const templatePrefs = useMemo(() => {
+    try {
+        return JSON.parse(localStorage.getItem(LS_KEY_TEMPLATE_PREFS) || '{}');
+    } catch { return {}; }
+  }, []);
+
+  const [templateFolderId, setTemplateFolderId] = useState<string>(templatePrefs.folderId || 'templates');
+  const [defaultNewNoteTemplateId, setDefaultNewNoteTemplateId] = useState<string>(templatePrefs.defaultId || '');
 
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({ isOpen: false, message: '', onConfirm: () => {} });
   const [inputModal, setInputModal] = useState<InputModalState>({ isOpen: false, title: '', value: '', onConfirm: () => {} });
@@ -288,7 +315,7 @@ export default function App() {
   // Gesture State for Edge Swipe
   const touchStartRef = useRef<{ x: number, y: number } | null>(null);
 
-  // -- LocalStorage Effects (Only for UI/Settings/Tracking) --
+  // -- LocalStorage Effects --
 
   useEffect(() => {
       localStorage.setItem(LS_KEY_DELETED_PATHS, JSON.stringify(deletedPaths));
@@ -344,6 +371,14 @@ export default function App() {
       localStorage.setItem(LS_KEY_DAILY_PREFS, JSON.stringify(prefs));
   }, [dailyNoteFormat, dailyNoteFolderId, dailyNoteTemplate]);
 
+  useEffect(() => {
+    const prefs = {
+        folderId: templateFolderId,
+        defaultId: defaultNewNoteTemplateId
+    };
+    localStorage.setItem(LS_KEY_TEMPLATE_PREFS, JSON.stringify(prefs));
+  }, [templateFolderId, defaultNewNoteTemplateId]);
+
   // Browser Title
   useEffect(() => {
     const activeId = panes[activePaneIndex];
@@ -358,14 +393,11 @@ export default function App() {
 
   // Cleanup expired trash on mount
   useEffect(() => {
-      // Small timeout to ensure DB is loaded
       setTimeout(() => cleanupExpiredTrash(), 1000);
   }, []); 
 
   const cleanupExpiredTrash = async () => {
       const now = Date.now();
-      
-      // Since `notes` and `folders` in scope might be stale/loading, fetch direct from DB
       const allNotes = await db.notes.toArray();
       const allFolders = await db.folders.toArray();
 
@@ -376,7 +408,6 @@ export default function App() {
 
       const newDeletedPaths = [...deletedPaths];
 
-      // Queue paths for permanent deletion
       expiredNotes.forEach((n: Note) => {
           newDeletedPaths.push(getNotePath(n.title, n.folderId, allFolders));
       });
@@ -386,7 +417,6 @@ export default function App() {
 
       setDeletedPaths(newDeletedPaths);
 
-      // Delete from DB
       await db.notes.bulkDelete(expiredNotes.map((n: Note) => n.id));
       await db.folders.bulkDelete(expiredFolders.map((f: Folder) => f.id));
   };
@@ -475,11 +505,7 @@ export default function App() {
               try {
                   await db.notes.clear();
                   await db.folders.clear();
-                  
-                  // LocalStorageもクリア（認証情報などは残すか、全部消すかは要件次第ですが、ここでは全部消します）
                   localStorage.clear();
-                  
-                  // ページをリロードして初期状態に戻す
                   window.location.reload();
               } catch (e) {
                   console.error("Failed to delete data", e);
@@ -501,7 +527,6 @@ export default function App() {
       setSyncMessage('Syncing changes...');
       
       try {
-          // Sync logic needs snapshots
           const currentNotes = await db.notes.toArray();
           const currentFolders = await db.folders.toArray();
           
@@ -520,7 +545,6 @@ export default function App() {
           );
           
           if (data) {
-              // Update DB with results
               await (db as any).transaction('rw', db.notes, db.folders, async () => {
                   await db.notes.bulkPut(data.notes);
                   await db.folders.bulkPut(data.folders);
@@ -773,11 +797,21 @@ export default function App() {
 
   const handleCreateNote = async () => {
     lastEditTimeRef.current = Date.now();
+    let initialContent = '';
+    
+    // Use default template if configured
+    if (defaultNewNoteTemplateId) {
+        const templateNote = notes.find(n => n.id === defaultNewNoteTemplateId && !n.deletedAt);
+        if (templateNote) {
+            initialContent = processTemplate(templateNote.content, '');
+        }
+    }
+
     const newNote: Note = {
       id: generateId(),
       folderId: null, 
       title: '',
-      content: '',
+      content: initialContent,
       isBookmarked: false,
       updatedAt: Date.now(),
       createdAt: Date.now(),
@@ -886,7 +920,6 @@ export default function App() {
         value: folder.name,
         onConfirm: async (newName) => {
             if (newName && newName !== folder.name) {
-                // For folders, getFolderPath uses the *current* state.
                 const oldPath = getFolderPath(id, folders);
                 
                 // Simulate new state to calculate new path
@@ -1088,8 +1121,6 @@ export default function App() {
       
       const oldPath = getFolderPath(folderId, folders);
       
-      // Simulate state for new path calculation - a bit tricky without state.
-      // We construct a temporary folders array
       const tempFolders = folders.map(f => f.id === folderId ? { ...f, parentId } : f);
       const newPath = getFolderPath(folderId, tempFolders);
       
@@ -1148,30 +1179,23 @@ export default function App() {
 
       lastEditTimeRef.current = Date.now();
 
-      // 1. Refactor links pointing to the old source title to point to target (if necessary)
-      // Note: If the source note's title was already updated to the target's title, 
-      // oldSourceTitle is essential to find broken links.
       if (oldSourceTitle && oldSourceTitle !== target.title) {
           await handleRefactorLinks(oldSourceTitle, target.title);
       }
 
-      // 2. Merge Content
       const separator = `\n\n---\n\n`;
       const newContent = target.content + separator + source.content;
 
-      // 3. Update Target
       addUnsyncedId(targetId);
       await db.notes.update(targetId, { 
           content: newContent,
           updatedAt: Date.now()
       });
 
-      // 4. Soft Delete Source
       const now = Date.now();
       addUnsyncedId(sourceId);
       await db.notes.update(sourceId, { deletedAt: now, updatedAt: now });
       
-      // 5. Update Panes: Close deleted note, open target
       setPanes(prev => prev.map(p => p === sourceId ? targetId : p));
   };
 
@@ -1400,7 +1424,6 @@ export default function App() {
         { id: 'random-note', label: 'Open Random Note', icon: <Shuffle size={16}/>, action: handleOpenRandomNote, shortcut: 'Alt+R', group: 'Actions' },
         { id: 'toggle-preview', label: 'Toggle Edit/Preview', icon: <Eye size={16}/>, action: handleTogglePreview, shortcut: 'Ctrl+E', group: 'View' },
         { id: 'split-view', label: 'Toggle Split View', icon: <Columns size={16}/>, action: toggleSplitView, shortcut: 'Ctrl+Shift+V', group: 'View' },
-        { id: 'split-view', label: 'Toggle Split View', icon: <Columns size={16}/>, action: toggleSplitView, group: 'View' },
         { id: 'sync', label: 'Start Sync', icon: <RefreshCw size={16}/>, action: handleSync, shortcut: 'Ctrl+S', group: 'System' },
         { id: 'tasks', label: 'Show Tasks', icon: <CheckSquare size={16}/>, action: () => setShowTasks(true), shortcut: 'Alt+T', group: 'View' },
         { id: 'settings', label: 'Open Settings', icon: <Terminal size={16}/>, action: () => setShowSettings(true), group: 'System' },
@@ -1437,8 +1460,28 @@ export default function App() {
             group: 'Bookmarks'
         }));
 
-    return [...baseCommands, ...bookmarkCommands];
-  }, [notes, handleCreateNote, handleOpenDailyNote, handleOpenRandomNote, toggleSplitView, handleSync, activeNoteId]);
+    // Template Commands
+    const templateCommands: CommandItem[] = [];
+    if (templateFolderId) {
+        const templates = notes.filter(n => n.folderId === templateFolderId && !n.deletedAt);
+        templates.forEach(tpl => {
+            templateCommands.push({
+                id: `insert-template-${tpl.id}`,
+                label: `Insert Template: ${tpl.title}`,
+                icon: <LayoutTemplate size={16} />,
+                group: 'Templates',
+                action: () => {
+                    const activeNote = notes.find(n => n.id === activeNoteId);
+                    const processed = processTemplate(tpl.content, activeNote ? activeNote.title : '');
+                    // Dispatch event for Editor to pick up and insert at cursor
+                    window.dispatchEvent(new CustomEvent('rhizonote-insert-text', { detail: processed }));
+                }
+            });
+        });
+    }
+
+    return [...baseCommands, ...templateCommands, ...bookmarkCommands];
+  }, [notes, handleCreateNote, handleOpenDailyNote, handleOpenRandomNote, toggleSplitView, handleSync, activeNoteId, templateFolderId]);
 
   const handleToolbarClick = (e: React.MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -1857,6 +1900,53 @@ export default function App() {
                     </p>
                 </div>
 
+                 <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-slate-800">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-slate-300">
+                        <LayoutTemplate size={16} />
+                        <span>Templates</span>
+                    </div>
+                    
+                    <div className="space-y-1">
+                        <label className="text-xs text-slate-500 dark:text-slate-400">Templates Folder</label>
+                        <select 
+                            value={templateFolderId}
+                            onChange={(e) => {
+                                setTemplateFolderId(e.target.value);
+                                if (e.target.value === '') setDefaultNewNoteTemplateId('');
+                            }}
+                            className="w-full bg-gray-100 dark:bg-slate-950 text-slate-800 dark:text-slate-200 rounded p-2 text-sm border border-gray-300 dark:border-slate-800 focus:border-indigo-500 focus:outline-none appearance-none"
+                        >
+                            <option value="">None</option>
+                            {folders.filter((f: Folder) => !f.deletedAt).map((f: Folder) => (
+                                <option key={f.id} value={f.id}>{f.name}</option>
+                            ))}
+                        </select>
+                         <p className="text-[10px] text-slate-500">Notes in this folder can be used as templates.</p>
+                    </div>
+
+                    {templateFolderId && (
+                        <div className="space-y-1">
+                            <label className="text-xs text-slate-500 dark:text-slate-400">Default New Note Template</label>
+                            <select 
+                                value={defaultNewNoteTemplateId}
+                                onChange={(e) => setDefaultNewNoteTemplateId(e.target.value)}
+                                className="w-full bg-gray-100 dark:bg-slate-950 text-slate-800 dark:text-slate-200 rounded p-2 text-sm border border-gray-300 dark:border-slate-800 focus:border-indigo-500 focus:outline-none appearance-none"
+                            >
+                                <option value="">None</option>
+                                {notes.filter(n => n.folderId === templateFolderId && !n.deletedAt).map(n => (
+                                    <option key={n.id} value={n.id}>{n.title}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+                    
+                     <div className="bg-gray-100 dark:bg-slate-950 p-2 rounded text-[10px] text-slate-500 font-mono leading-relaxed">
+                        Variables: {'{{date}}'}, {'{{time}}'}, {'{{title}}'}<br/>
+                        Custom Date: {'{{date:YYYY-MM-DD}}'}<br/>
+                        Offset: {'{{date+1d:YYYY-MM-DD}}'}
+                    </div>
+                </div>
+
                 <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-slate-800">
                     <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-slate-300">
                         <Calendar size={16} />
@@ -1897,7 +1987,6 @@ export default function App() {
                             className="w-full h-24 bg-gray-100 dark:bg-slate-950 text-slate-800 dark:text-slate-200 rounded p-2 text-sm border border-gray-300 dark:border-slate-800 focus:border-indigo-500 focus:outline-none font-mono"
                             placeholder="# {{title}}"
                         />
-                        <p className="text-[10px] text-slate-500">Use {'{{title}}'} for the date title. Use {'{{date+1d:YYYY-MM-DD}}'} for relative dates.</p>
                     </div>
                 </div>
 

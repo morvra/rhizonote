@@ -4,7 +4,8 @@ export const INITIAL_FOLDERS: Folder[] = [
   { id: 'f1', name: '00 Start Here', parentId: null, createdAt: Date.now() },
   { id: 'f2', name: 'Projects', parentId: null, createdAt: Date.now() },
   { id: 'f3', name: 'Daily Notes', parentId: null, createdAt: Date.now() },
-  { id: 'f4', name: 'Archive', parentId: 'f2', createdAt: Date.now() }
+  { id: 'f4', name: 'Archive', parentId: 'f2', createdAt: Date.now() },
+  { id: 'templates', name: 'Templates', parentId: null, createdAt: Date.now() }
 ];
 
 export const INITIAL_NOTES: Note[] = [
@@ -60,6 +61,24 @@ export const INITIAL_NOTES: Note[] = [
     folderId: 'f2',
     title: 'Design Specs',
     content: `# Design Specifications\n\nColors:\n- Primary: #4F46E5\n- Background: #F9FAFB\n\nSee [[Project Orbit]] for context.`,
+    isBookmarked: false,
+    updatedAt: Date.now(),
+    createdAt: Date.now(),
+  },
+  {
+    id: 'tpl1',
+    folderId: 'templates',
+    title: 'Meeting Template',
+    content: `# Meeting: {{title}}\n**Date**: {{date}} {{time}}\n\n## Attendees\n\n## Agenda\n1. \n\n## Notes\n- \n\n## Action Items\n- [ ] `,
+    isBookmarked: false,
+    updatedAt: Date.now(),
+    createdAt: Date.now(),
+  },
+  {
+    id: 'tpl2',
+    folderId: 'templates',
+    title: 'Project Template',
+    content: `# Project: {{title}}\n**Start Date**: {{date}}\n\n## Goals\n- \n\n## Milestones\n- [ ] Phase 1\n- [ ] Phase 2`,
     isBookmarked: false,
     updatedAt: Date.now(),
     createdAt: Date.now(),
