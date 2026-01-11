@@ -118,7 +118,7 @@ const Backdrop = React.memo(React.forwardRef<HTMLDivElement, BackdropProps>(({
                                 const alt = match[1];
                                 const url = match[2];
                                 return (
-                                    <span key={i} className="text-amber-600 dark:text-amber-500 relative inline-block">
+                                    <span key={i} className="text-amber-600 dark:text-amber-500 relative">
                                         {'!['}{highlightSearch(alt, activeSearchQuery)}{']('}
                                         <span 
                                             className="underline decoration-amber-500 cursor-pointer pointer-events-auto relative z-10"
