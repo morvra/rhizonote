@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Note, Folder, SortField, SortDirection } from '../types';
-import { FileText, Bookmark, Plus, Search, Trash2, Folder as FolderIcon, FolderOpen, ChevronRight, ChevronDown, Settings, Edit2, RotateCcw, AlertTriangle } from 'lucide-react';
+import { FileText, Bookmark, Plus, Search, Trash2, Folder as FolderIcon, FolderOpen, ChevronRight, ChevronDown, Settings, Edit2, RotateCcw, AlertTriangle, X } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -519,12 +519,22 @@ const Sidebar: React.FC<SidebarProps> = ({
             <div className="relative">
                 <Search size={16} className="absolute left-3 top-3 md:top-2.5 text-slate-500 dark:text-slate-500 md:w-[14px] md:h-[14px]" />
                 <input
-                type="text"
-                placeholder="Search..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 text-base md:text-sm rounded pl-10 md:pl-9 pr-3 py-2 border border-gray-300 dark:border-slate-800 focus:border-indigo-500 focus:outline-none placeholder-slate-400 dark:placeholder-slate-600"
+                    type="text"
+                    placeholder="Search..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 text-base md:text-sm rounded pl-10 md:pl-9 pr-10 md:pr-9 py-2 border border-gray-300 dark:border-slate-800 focus:border-indigo-500 focus:outline-none placeholder-slate-400 dark:placeholder-slate-600"
                 />
+                {search.length > 0 && (
+                    <button
+                        onClick={() => setSearch('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 rounded-full hover:bg-gray-200 dark:hover:bg-slate-800 transition-colors"
+                        title="Clear search"
+                        aria-label="Clear search"
+                    >
+                        <X size={16} className="md:w-[14px] md:h-[14px]" />
+                    </button>
+                )}
             </div>
             </div>
 
