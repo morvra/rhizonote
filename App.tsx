@@ -4,7 +4,7 @@ import Editor from './components/Editor';
 import CommandPalette, { CommandItem } from './components/CommandPalette';
 import { Note, Folder, SortField, SortDirection, Theme } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS } from './constants';
-import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle, Shuffle, Eye, Bookmark, Terminal, Download, Trash, FileJson, LayoutTemplate } from 'lucide-react';
+import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle, Shuffle, Eye, Bookmark, Terminal, Download, Trash, FileJson, LayoutTemplate, Command } from 'lucide-react';
 import { getDropboxAuthUrl, parseAuthTokenFromUrl, syncDropboxData, getNotePath, getFolderPath, RenameOperation, exchangeCodeForToken } from './utils/dropboxService';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
@@ -1627,6 +1627,14 @@ export default function App() {
                     </button>
 
                     <button
+                        onClick={() => setIsCommandPaletteOpen(true)}
+                        className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
+                        title="Command Palette (Ctrl/Cmd + P)"
+                    >
+                        <Command size={18} />
+                    </button>
+
+                    <button
                         onClick={handleCreateNote}
                         className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors ml-1"
                         title="Create New Note (Ctrl/Cmd + Alt + N)"
@@ -1767,6 +1775,12 @@ export default function App() {
                 className="text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400"
             >
                 <Shuffle size={24} strokeWidth={1.5} />
+            </button>
+            <button
+                onClick={() => setIsCommandPaletteOpen(true)}
+                className="text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+            >
+                <Command size={24} strokeWidth={1.5} />
             </button>
              <button
                 onClick={handleSync}
