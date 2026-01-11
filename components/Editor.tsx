@@ -199,10 +199,15 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const [localContent, setLocalContent] = useState(note.content);
   const [localTitle, setLocalTitle] = useState(note.title);
   const [originalTitle, setOriginalTitle] = useState(note.title);
+  
+  // -- Debounced States for Heavy Computations --
+  const [debouncedContent, setDebouncedContent] = useState(note.content);
+  const [debouncedTitle, setDebouncedTitle] = useState(note.title);
+
   const lastEditTimeRef = useRef<number>(0);
   const prevNoteIdRef = useRef(note.id);
   
-  // -- Debounce Logic --
+  // -- Debounce Logic for Saving --
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const latestContentRef = useRef(note.content);
   const latestTitleRef = useRef(note.title);
@@ -218,6 +223,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
       latestContentRef.current = note.content;
       setLocalTitle(note.title);
       latestTitleRef.current = note.title;
+      // Reset debounced state immediately to avoid flash of old analysis
+      setDebouncedContent(note.content);
+      setDebouncedTitle(note.title);
       // Reset active search query when note changes
       setActiveSearchQuery(searchQuery || '');
   }
@@ -230,6 +238,15 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   useEffect(() => {
       latestTitleRef.current = localTitle;
   }, [localTitle]);
+
+  // Sync debounced state with local state (1 second delay for heavy tasks)
+  useEffect(() => {
+      const handler = setTimeout(() => {
+          setDebouncedContent(localContent);
+          setDebouncedTitle(localTitle);
+      }, 1000);
+      return () => clearTimeout(handler);
+  }, [localContent, localTitle]);
 
   // Helper to save immediately (flush changes)
   const saveNow = () => {
@@ -282,11 +299,13 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
           const timeSinceEdit = Date.now() - lastEditTimeRef.current;
           if (note.content !== localContent && timeSinceEdit > 2000) {
               setLocalContent(note.content);
+              setDebouncedContent(note.content);
               latestContentRef.current = note.content;
           }
           // 外部データとローカルが異なり、かつ直近(2秒以内)で編集していない場合のみ反映
           if (note.title !== localTitle && timeSinceEdit > 2000) {
               setLocalTitle(note.title);
+              setDebouncedTitle(note.title);
               latestTitleRef.current = note.title;
           }
       }
@@ -307,15 +326,18 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     if (activeSearchQuery) setActiveSearchQuery('');
   };
 
-  // Duplicate detection
+  // Optimization: Memoize existing titles for backdrop to prevent O(N) iteration on every keystroke
+  const existingTitles = useMemo(() => new Set(allNotes.filter(n => !n.deletedAt).map(n => n.title)), [allNotes]);
+
+  // Duplicate detection - Use debounced title
   const duplicateNote = useMemo(() => {
-    if (!note.title.trim()) return null;
+    if (!debouncedTitle.trim()) return null;
     return allNotes.find(n => 
         n.id !== note.id && 
         !n.deletedAt && 
-        n.title.trim().toLowerCase() === note.title.trim().toLowerCase()
+        n.title.trim().toLowerCase() === debouncedTitle.trim().toLowerCase()
     );
-  }, [note.title, allNotes, note.id]);
+  }, [debouncedTitle, allNotes, note.id]);
 
   // Markdown記号を除去して文字数をカウントする関数
   const getCleanCharCount = (text: string) => {
@@ -468,12 +490,13 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
   const networkData = useMemo<{ direct: Note[]; hubs: Record<string, Note[]> }>(() => {
       const activeAllNotes = allNotes.filter(n => !n.deletedAt);
-      const currentTitle = note.title;
+      // Use debounced states for heavy graph calculation
+      const currentTitle = debouncedTitle;
       const currentId = note.id;
       const getLinks = (content: string) => extractLinks(content);
 
       // 1. Outgoing (本文に出てくる順序) のリストを作成
-      const rawLinks = getLinks(localContent); // リンクテキストの配列（出現順）
+      const rawLinks = getLinks(debouncedContent); // リンクテキストの配列（出現順）
       const outgoingNotes: Note[] = [];
       const seenIds = new Set<string>(); // 重復防止用
       seenIds.add(currentId); // 自分自身は除外
@@ -592,7 +615,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
           direct: sortedDirectNotes,
           hubs: hubs
       };
-  }, [localContent, note.title, allNotes, note.id]);
+  }, [debouncedContent, debouncedTitle, allNotes, note.id]);
 
   const linkCandidates = useMemo(() => {
     // 1. まずは既存のノートを候補に入れる
@@ -1294,7 +1317,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
 
   const renderBackdrop = (content: string, activeLine: number) => {
       const lines = content.split('\n');
-      const existingTitles = new Set(allNotes.filter(n => !n.deletedAt).map(n => n.title));
+      // existingTitles is now memoized in the component scope
       
       return lines.map((line, index) => {
           const isActive = index === activeLine;
