@@ -510,17 +510,18 @@ export const syncDropboxData = async (
         await Promise.all(batch.map(async (note) => {
             const path = getNotePath(note.title, note.folderId, mergedFolders);
             
-            const fileContent = `---
-            id: ${note.id}
-            title: ${note.title}
-            created: ${note.createdAt}
-            updated: ${note.updatedAt}
-            isBookmarked: ${note.isBookmarked || false}
-            isPublished: ${note.isPublished || false}
-            ${note.bookmarkOrder !== undefined ? `bookmarkOrder: ${note.bookmarkOrder}` : ''}
-            ${note.deletedAt ? `deletedAt: ${note.deletedAt}` : ''}
-            ---
-            ${note.content}`;
+const fileContent = `---
+id: ${note.id}
+title: ${note.title}
+created: ${note.createdAt}
+updated: ${note.updatedAt}
+isBookmarked: ${note.isBookmarked || false}
+isPublished: ${note.isPublished || false}
+${note.bookmarkOrder !== undefined ? `bookmarkOrder: ${note.bookmarkOrder}` : ''}
+${note.deletedAt ? `deletedAt: ${note.deletedAt}` : ''}
+---
+${note.content}`;
+
             const blob = new Blob([fileContent], { type: 'text/markdown' });
 
             try {

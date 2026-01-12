@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rhizonote-v3.5';
+const CACHE_NAME = 'rhizonote-v3.5.1';
 
 // Install event: Pre-cache critical assets (App Shell)
 // Note: Since filenames are hashed in Vite, we only explicitly cache the entry points.
