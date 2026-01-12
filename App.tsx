@@ -1518,7 +1518,7 @@ export default function App() {
           return (
               <GridView 
                 notes={notes} 
-                onSelectNote={(id) => openNote(id)} 
+                onSelectNote={(id, query) => openNote(id, query)} 
               />
           );
       }
