@@ -303,7 +303,7 @@ const renderTable = (lines: string[], existingTitles?: Set<string>) => {
         });
     };
 
-    // 2行目がセパレーター行（例: |---|）かどうかを判定
+    // 2行目がセパレーター行（例: |---| ）かどうかを判定
     const isSeparator = (line: string) => {
         // ハイフンを含み、かつ | - スペース 以外の文字が含まれていないか
         return line.includes('-') && /^[\s\-|]+$/.test(line);
@@ -700,6 +700,18 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
     window.addEventListener('rhizonote-insert-text', handleInsertText as EventListener);
     return () => window.removeEventListener('rhizonote-insert-text', handleInsertText as EventListener);
   }, [isActive, localContent]);
+
+  // Listen for toggle preview events from App.tsx (Command Palette or Shortcut)
+  useEffect(() => {
+    if (!isActive) return;
+
+    const handleToggle = () => {
+        setMode(prev => prev === 'edit' ? 'preview' : 'edit');
+    };
+
+    window.addEventListener('rhizonote-toggle-preview', handleToggle);
+    return () => window.removeEventListener('rhizonote-toggle-preview', handleToggle);
+  }, [isActive]);
 
   // Update handlers
   const updateContent = (newContent: string) => {

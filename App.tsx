@@ -1342,6 +1342,10 @@ export default function App() {
             e.preventDefault();
             goForward();
         }
+        if (isMod && e.key.toLowerCase() === 'e') {
+            e.preventDefault();
+            handleTogglePreview();
+        }
         if (isMod && e.altKey && e.key.toLowerCase() === 'n') {
             e.preventDefault();
             handleCreateNote();
