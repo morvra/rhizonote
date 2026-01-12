@@ -11,6 +11,7 @@ import { getDropboxAuthUrl, parseAuthTokenFromUrl, syncDropboxData, getNotePath,
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
 import { exportNoteAsMarkdown, exportNoteAsHtml, exportAllAsZip } from './utils/exportService';
+import { updateTasksForNote, removeTasksForNote, reindexAllTasks } from './utils/taskService';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -159,6 +160,22 @@ export default function App() {
         }
     };
     migrate();
+  }, []);
+
+  // Task Indexing Migration (初回のみ実行)
+  useEffect(() => {
+      const initTasks = async () => {
+          const taskCount = await db.tasks.count();
+          // タスクテーブルが空で、かつノートが存在する場合のみインデックス再構築
+          if (taskCount === 0) {
+              const allNotes = await db.notes.toArray();
+              if (allNotes.length > 0) {
+                  console.log('Indexing tasks for the first time...');
+                  await reindexAllTasks(allNotes);
+              }
+          }
+      };
+      initTasks();
   }, []);
 
   // Track deleted paths (notes/folders) for sync deletion
@@ -643,39 +660,41 @@ export default function App() {
   }, [autoSync, dropboxToken, dropboxRefreshToken]);
 
   // Extract tasks
-  const allTasks = useMemo<NoteTasks[]>(() => {
-      const result: NoteTasks[] = [];
-      notes.filter((n: Note) => !n.deletedAt).forEach((note: Note) => {
-          const noteTasks: ExtractedTask[] = [];
-          note.content.split('\n').forEach((line, idx) => {
-              const match = line.match(/^(\s*)(-\s\[([ x])\]\s)(.*)/);
-              if (match) {
-                  noteTasks.push({
-                      lineIndex: idx,
-                      prefix: match[1] + match[2],
-                      content: match[4],
-                      isChecked: match[3] === 'x',
-                      rawLine: line
+  // noteId+lineIndex でソートされますが、ここでは単に配列として取得します
+  // ノート情報が必要なので、取得後にノートと結合する必要があります
+  const tasksFromDb = useLiveQuery(() => db.tasks.toArray()) ?? [];
+
+  // 表示用にデータを整形
+  const visibleFlatTasks = useMemo(() => {
+      if (!tasksFromDb || notes.length === 0) return [];
+      
+      const result: { note: Note; task: any }[] = [];
+      
+      // IDで引けるようにマップ化
+      const notesMap = new Map(notes.map(n => [n.id, n]));
+
+      tasksFromDb.forEach(task => {
+          const note = notesMap.get(task.noteId);
+          // ノートが存在し、ゴミ箱に入っていない場合のみ表示
+          if (note && !note.deletedAt) {
+              // 未完了、または「最近完了した」タスクを表示
+              const isRecentlyCompleted = recentlyCompletedTasks.has(`${task.noteId}-${task.lineIndex}`);
+              if (!task.isChecked || isRecentlyCompleted) {
+                  result.push({ 
+                      note, 
+                      task: {
+                          lineIndex: task.lineIndex,
+                          content: task.content,
+                          isChecked: task.isChecked,
+                          rawLine: task.rawContent
+                      }
                   });
               }
-          });
-          if (noteTasks.length > 0) {
-              result.push({ note, tasks: noteTasks });
           }
       });
-      return result;
-  }, [notes]);
 
-  const visibleFlatTasks = useMemo(() => {
-      const flat: { note: Note; task: ExtractedTask }[] = [];
-      allTasks.forEach(noteGroup => {
-          const visible = noteGroup.tasks.filter(t => !t.isChecked || recentlyCompletedTasks.has(`${noteGroup.note.id}-${t.lineIndex}`));
-          visible.forEach(task => {
-              flat.push({ note: noteGroup.note, task });
-          });
-      });
-      return flat;
-  }, [allTasks, recentlyCompletedTasks]);
+      return result;
+  }, [tasksFromDb, notes, recentlyCompletedTasks]);
 
   useEffect(() => {
       if (showTasks) {
@@ -758,6 +777,7 @@ export default function App() {
       const newContent = lines.join('\n');
       await db.notes.update(noteId, { content: newContent, updatedAt: Date.now() });
       addUnsyncedId(noteId);
+      await updateTasksForNote({ ...note, content: newContent });
   };
 
   const openNote = (id: string, query?: string) => {
@@ -827,6 +847,7 @@ export default function App() {
     };
     
     await db.notes.add(newNote);
+    await updateTasksForNote(newNote);
     
     addUnsyncedId(newNote.id);
     
@@ -846,6 +867,7 @@ export default function App() {
         createdAt: Date.now(),
     };
     await db.notes.add(newNote);
+    await updateTasksForNote(newNote);
     addUnsyncedId(newNote.id);
   };
 
@@ -871,6 +893,7 @@ export default function App() {
             createdAt: Date.now(),
         };
         await db.notes.add(newNote);
+        await updateTasksForNote(newNote);
         addUnsyncedId(newNote.id);
         openNote(newNote.id);
     }
@@ -996,6 +1019,7 @@ export default function App() {
             const now = Date.now();
             addUnsyncedId(id);
             await db.notes.update(id, { deletedAt: now, updatedAt: now });
+            await removeTasksForNote(id);
             setPanes(prev => prev.map(paneId => paneId === id ? null : paneId));
             setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} });
         }
@@ -1103,8 +1127,13 @@ export default function App() {
 
     addUnsyncedId(id);
 
+    const updatedNote = { ...oldNote, ...updates, updatedAt: Date.now() };
     await db.notes.update(id, { ...updates, updatedAt: Date.now() });
+    if (updates.content !== undefined) {
+        await updateTasksForNote(updatedNote);
+    }
   };
+
 
   const handleMoveNote = (noteId: string, folderId: string | null) => {
       handleUpdateNote(noteId, { folderId });
@@ -1176,6 +1205,7 @@ export default function App() {
               createdAt: Date.now()
           };
           await db.notes.add(newNote);
+          await updateTasksForNote(newNote);
           addUnsyncedId(newNote.id);
           openNote(newNote.id);
       }
@@ -2156,10 +2186,18 @@ export default function App() {
                  </div>
                  <div className="flex-1 overflow-y-auto p-4 space-y-6" ref={taskListRef}>
                      {(() => {
-                         const visibleNoteTasks = allTasks.map(nt => ({
-                             note: nt.note,
-                             tasks: nt.tasks.filter(t => !t.isChecked || recentlyCompletedTasks.has(`${nt.note.id}-${t.lineIndex}`))
-                         })).filter(nt => nt.tasks.length > 0);
+                         // visibleFlatTasks (フラットな配列) をノートごとにグループ化して、
+                         // 以前の visibleNoteTasks と同じ構造 ({ note, tasks: [] }) を作ります
+                         const grouped = new Map<string, { note: Note, tasks: any[] }>();
+                         
+                         visibleFlatTasks.forEach(({ note, task }) => {
+                             if (!grouped.has(note.id)) {
+                                 grouped.set(note.id, { note, tasks: [] });
+                             }
+                             grouped.get(note.id)!.tasks.push(task);
+                         });
+                         
+                         const visibleNoteTasks = Array.from(grouped.values());
 
                          if (visibleNoteTasks.length === 0) {
                              return (

@@ -30,3 +30,11 @@ export interface EditorState {
   activeNoteId: string | null;
   mode: 'edit' | 'preview';
 }
+
+export interface TaskItem {
+  noteId: string;
+  lineIndex: number;
+  content: string;
+  isChecked: boolean;
+  rawContent: string;
+}
