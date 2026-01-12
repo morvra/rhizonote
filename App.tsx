@@ -98,19 +98,6 @@ interface PaneHistory {
     currentIndex: number;
 }
 
-interface ExtractedTask {
-    lineIndex: number;
-    prefix: string;
-    content: string;
-    isChecked: boolean;
-    rawLine: string;
-}
-
-interface NoteTasks {
-    note: Note;
-    tasks: ExtractedTask[];
-}
-
 interface ConfirmModalState {
     isOpen: boolean;
     message: string;
@@ -1130,6 +1117,7 @@ export default function App() {
     const updatedNote = { ...oldNote, ...updates, updatedAt: Date.now() };
     await db.notes.update(id, { ...updates, updatedAt: Date.now() });
     if (updates.content !== undefined) {
+        // これでエラーが消えます
         await updateTasksForNote(updatedNote);
     }
   };
