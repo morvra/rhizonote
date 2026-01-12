@@ -84,7 +84,7 @@ const Backdrop = React.memo(React.forwardRef<HTMLDivElement, BackdropProps>(({
     return (
         <div 
             ref={ref}
-            className="min-h-full px-8 pt-4 pb-12 font-sans text-slate-800 dark:text-slate-300 whitespace-pre-wrap break-words pointer-events-none z-0"
+            className="min-h-full px-6 pt-4 pb-12 font-sans text-slate-800 dark:text-slate-300 whitespace-pre-wrap break-words pointer-events-none z-0"
             style={{ fontSize: `${fontSize}px`, lineHeight: 1.6 }}
             aria-hidden="true"
         >
