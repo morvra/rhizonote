@@ -17,6 +17,7 @@ export interface Note {
   title: string;
   content: string;
   isBookmarked: boolean;
+  isPublished?: boolean;
   updatedAt: number;
   createdAt: number;
   isGhost?: boolean;

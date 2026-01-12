@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Note } from '../types';
 import WikiLinkPopup from './WikiLinkPopup';
-import { Edit3, Eye, RefreshCw, Bold, Italic, Strikethrough, Code, Link as LinkIcon, FilePlus, Link2, Info, AlertTriangle, Merge } from 'lucide-react';
+import { Edit3, Eye, EyeOff, RefreshCw, Bold, Italic, Strikethrough, Code, Link as LinkIcon, FilePlus, Link2, Info, AlertTriangle, Merge } from 'lucide-react';
 
 interface EditorProps {
   note: Note;
@@ -15,6 +15,7 @@ interface EditorProps {
   isActive?: boolean;
   highlightedLine?: { noteId: string; lineIndex: number } | null;
   searchQuery?: string;
+  showPublishFeature?: boolean;
 }
 
 // Helper to extract [[links]] from content, ignoring code blocks
@@ -485,7 +486,7 @@ const renderMarkdown = (content: string, existingTitles?: Set<string>) => {
     return { __html: html };
 };
 
-const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, onRefactorLinks, onCreateNoteWithContent, onMergeNotes, fontSize, isActive = true, highlightedLine, searchQuery }) => {
+const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, onRefactorLinks, onCreateNoteWithContent, onMergeNotes, fontSize, isActive = true, highlightedLine, searchQuery, showPublishFeature = false }) => {
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1639,8 +1640,25 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                                 </div>
                             </div>
                         </div>
-                        )}
-                    </div>
+                      )}
+                    {showPublishFeature && (
+                        <button
+                            onClick={() => {
+                                onUpdate(note.id, { isPublished: !note.isPublished });
+                            }}
+                            className={`p-1.5 rounded transition-colors ${
+                                note.isPublished 
+                                    ? 'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400' 
+                                    : 'text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+                            }`}
+                            title={note.isPublished ? "Published (Public)" : "Unpublished (Private)"}
+                        >
+                            {note.isPublished ? <Eye size={18} /> : <EyeOff size={18} />}
+                        </button>
+                    )}
+
+                  </div>
+
                 <div className="flex items-center gap-2 bg-gray-200 dark:bg-slate-800 rounded p-1">
                 <button
                     onClick={() => setMode('edit')}

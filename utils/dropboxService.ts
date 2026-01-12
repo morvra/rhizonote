@@ -327,6 +327,7 @@ export const syncDropboxData = async (
                     content: content,
                     folderId: folderId,
                     isBookmarked: !!metadata.isBookmarked,
+                    isPublished: !!metadata.isPublished,
                     bookmarkOrder: metadata.bookmarkOrder,
                     createdAt: metadata.created || Date.now(),
                     updatedAt: new Date(entry.client_modified).getTime(),
@@ -510,15 +511,16 @@ export const syncDropboxData = async (
             const path = getNotePath(note.title, note.folderId, mergedFolders);
             
             const fileContent = `---
-id: ${note.id}
-title: ${note.title}
-created: ${note.createdAt}
-updated: ${note.updatedAt}
-isBookmarked: ${note.isBookmarked || false}
-${note.bookmarkOrder !== undefined ? `bookmarkOrder: ${note.bookmarkOrder}` : ''}
-${note.deletedAt ? `deletedAt: ${note.deletedAt}` : ''}
----
-${note.content}`;
+            id: ${note.id}
+            title: ${note.title}
+            created: ${note.createdAt}
+            updated: ${note.updatedAt}
+            isBookmarked: ${note.isBookmarked || false}
+            isPublished: ${note.isPublished || false}
+            ${note.bookmarkOrder !== undefined ? `bookmarkOrder: ${note.bookmarkOrder}` : ''}
+            ${note.deletedAt ? `deletedAt: ${note.deletedAt}` : ''}
+            ---
+            ${note.content}`;
             const blob = new Blob([fileContent], { type: 'text/markdown' });
 
             try {

@@ -212,6 +212,7 @@ export default function App() {
   const [showTasks, setShowTasks] = useState(uiSettings.showTasks || false);
   const [autoSync, setAutoSync] = useState(uiSettings.autoSync ?? true);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [showPublishFeature, setShowPublishFeature] = useState(uiSettings.showPublishFeature ?? false);
 
   // Dropbox State
   const [dropboxToken, setDropboxToken] = useState<string | null>(() => localStorage.getItem(LS_KEY_DB_TOKEN));
@@ -364,10 +365,11 @@ export default function App() {
           splitRatio,
           sidebarVisible,
           showTasks,
-          autoSync
+          autoSync,
+          showPublishFeature
       };
       localStorage.setItem(LS_KEY_UI_SETTINGS, JSON.stringify(settings));
-  }, [fontSize, sidebarWidth, splitRatio, sidebarVisible, showTasks, autoSync]);
+  }, [fontSize, sidebarWidth, splitRatio, sidebarVisible, showTasks, autoSync, showPublishFeature]);
 
   useEffect(() => {
       const prefs = {
@@ -1560,6 +1562,7 @@ export default function App() {
                 isActive={isActive}
                 highlightedLine={highlightedLine}
                 searchQuery={pendingSearchQuery?.noteId === paneId ? pendingSearchQuery.query : undefined}
+                showPublishFeature={showPublishFeature}
             />
           );
       }
@@ -1953,6 +1956,30 @@ export default function App() {
                     </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                         Automatically sync when page becomes active and every 5 minutes
+                    </p>
+                </div>
+
+                <div className="space-y-3 pt-4 border-t border-gray-200 dark:border-slate-800">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-slate-300">
+                            <Eye size={16} />
+                            <span>Publishing Feature</span>
+                        </div>
+                        <button
+                            onClick={() => setShowPublishFeature(!showPublishFeature)}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                                showPublishFeature ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-slate-700'
+                            }`}
+                        >
+                            <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                    showPublishFeature ? 'translate-x-6' : 'translate-x-1'
+                                }`}
+                            />
+                        </button>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Show publish toggle for notes (for public website generation)
                     </p>
                 </div>
 
