@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Note } from '../types';
-import { Search, X, Image as ImageIcon } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 
 interface GridViewProps {
   notes: Note[];
