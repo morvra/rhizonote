@@ -400,6 +400,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const pendingCursorRef = useRef<number | null>(null);
   const isLinkClickRef = useRef(false);
   const touchCursorRef = useRef<{ startX: number; startY: number; startSelection: number; active: boolean } | null>(null);
+  const isComposingRef = useRef(false);
 
   // Mobile detection
   useEffect(() => {
@@ -501,6 +502,8 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   // Helper to trigger debounced save
   const triggerDebouncedSave = () => {
       lastEditTimeRef.current = Date.now();
+      if (isComposingRef.current) return;
+
       if (saveTimeoutRef.current) {
           clearTimeout(saveTimeoutRef.current);
       }
@@ -1446,6 +1449,16 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                     e.target.style.height = 'auto';
                     e.target.style.height = e.target.scrollHeight + 'px';
                 }}
+                // IME入力開始：フラグを立てる
+                onCompositionStart={() => {
+                    isComposingRef.current = true;
+                }}
+                // IME入力確定：フラグを下ろし、確定した値で保存フローを回す
+                onCompositionEnd={(e) => {
+                    isComposingRef.current = false;
+                    updateTitle(e.currentTarget.value);
+                }}
+
                 onBlur={saveNow}
                 ref={(el) => {
                     if (el) {
