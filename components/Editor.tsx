@@ -1600,7 +1600,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                     setSelectionMenu(null);
                     saveNow();
                 }}
-                className={`absolute inset-0 w-full h-full px-8 pt-4 pb-12 bg-transparent caret-indigo-600 dark:caret-slate-200 font-sans resize-none focus:outline-none overflow-hidden z-10 text-transparent`}
+                className={`absolute inset-0 w-full h-full px-6 pt-4 pb-12 bg-transparent caret-indigo-600 dark:caret-slate-200 font-sans resize-none focus:outline-none overflow-hidden z-10 text-transparent`}
                 style={{ fontSize: `${fontSize}px`, lineHeight: 1.6 }}
                 placeholder="Start typing..."
                 spellCheck={false}
@@ -1656,7 +1656,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
             </div>
             ) : (
             <div 
-                className="w-full h-full px-8 pt-4 pb-12 prose prose-slate dark:prose-invert max-w-none transition-colors duration-200 flex-1 min-h-[200px] break-words"
+                className="w-full h-full px-6 pt-4 pb-12 prose prose-slate dark:prose-invert max-w-none transition-colors duration-200 flex-1 min-h-[200px] break-words"
                 style={{ fontSize: `${fontSize}px` }}
                 dangerouslySetInnerHTML={renderMarkdown(
                     displayContent, 
