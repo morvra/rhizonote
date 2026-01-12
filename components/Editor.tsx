@@ -290,17 +290,107 @@ const parseInline = (text: string, existingTitles?: Set<string>) => {
     return processed;
 };
 
+const renderTable = (lines: string[], existingTitles?: Set<string>) => {
+    if (lines.length === 0) return '';
+
+    // セルを分割するヘルパー
+    const splitCells = (line: string) => {
+        return line.split('|').map(c => c.trim()).filter((c, i, arr) => {
+            // 先頭と末尾の空文字（|の前後の余白）を除外
+            if (i === 0 && c === '') return false;
+            if (i === arr.length - 1 && c === '') return false;
+            return true;
+        });
+    };
+
+    // 2行目がセパレーター行（例: |---|）かどうかを判定
+    const isSeparator = (line: string) => {
+        // ハイフンを含み、かつ | - スペース 以外の文字が含まれていないか
+        return line.includes('-') && /^[\s\-|]+$/.test(line);
+    };
+
+    // ヘッダーがあるかどうか判定
+    const hasHeader = lines.length >= 2 && isSeparator(lines[1]);
+
+    let html = '<div class="overflow-x-auto my-4 border border-gray-200 dark:border-slate-800 rounded-lg w-max max-w-full"><table class="border-collapse text-sm text-left">';
+    
+    if (hasHeader) {
+        // --- 通常のヘッダー付きテーブル ---
+        const headerLine = lines[0];
+        // lines[1] (セパレーター行) はスキップ
+        const bodyLines = lines.slice(2);
+
+        const headers = splitCells(headerLine);
+        
+        // Header
+        html += '<thead class="bg-gray-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 uppercase tracking-wider font-semibold"><tr>';
+        headers.forEach((header) => {
+            html += `<th class="px-4 py-3 border-b border-gray-200 dark:border-slate-800 whitespace-nowrap">${parseInline(header, existingTitles)}</th>`;
+        });
+        html += '</tr></thead>';
+
+        // Body
+        html += '<tbody class="divide-y divide-gray-200 dark:divide-slate-800 bg-white dark:bg-slate-950">';
+        bodyLines.forEach(line => {
+            const cells = splitCells(line);
+            html += '<tr>';
+            headers.forEach((_, i) => {
+                const cellContent = cells[i] || '';
+                html += `<td class="px-4 py-2 text-slate-600 dark:text-slate-400 border-r last:border-r-0 border-gray-100 dark:border-slate-800/50">${parseInline(cellContent, existingTitles)}</td>`;
+            });
+            html += '</tr>';
+        });
+        html += '</tbody>';
+
+    } else {
+        // --- ヘッダーなし（単純グリッド）モード ---
+        // 1行目の列数を基準にする
+        const firstRowCells = splitCells(lines[0]);
+        const colCount = firstRowCells.length;
+
+        html += '<tbody class="divide-y divide-gray-200 dark:divide-slate-800 bg-white dark:bg-slate-950">';
+        lines.forEach(line => {
+            const cells = splitCells(line);
+            html += '<tr>';
+            // 基準の列数分ループする（足りない場合は空セル）
+            for (let i = 0; i < colCount; i++) {
+                const cellContent = cells[i] || '';
+                html += `<td class="px-4 py-2 text-slate-600 dark:text-slate-400 border-r last:border-r-0 border-gray-100 dark:border-slate-800/50">${parseInline(cellContent, existingTitles)}</td>`;
+            }
+            html += '</tr>';
+        });
+        html += '</tbody>';
+    }
+
+    html += '</table></div>';
+    return html;
+};
+
 const renderMarkdown = (content: string, existingTitles?: Set<string>) => {
     let html = '';
     let inCodeBlock = false;
     let taskIndex = 0;
+    
+    // テーブル処理用のバッファ
+    let tableBuffer: string[] = [];
+
+    // バッファに溜まったテーブルを出力してクリアする関数
+    const flushTable = () => {
+        if (tableBuffer.length > 0) {
+            html += renderTable(tableBuffer, existingTitles);
+            tableBuffer = [];
+        }
+    };
 
     const lines = content.split('\n');
     
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
+        const trimmedLine = line.trim();
         
-        if (line.trim().startsWith('```')) {
+        // --- 1. コードブロック処理 ---
+        if (trimmedLine.startsWith('```')) {
+            flushTable(); // コードブロックが始まったらテーブル終了とみなす
             inCodeBlock = !inCodeBlock;
             html += inCodeBlock 
                 ? '<pre class="bg-gray-100 dark:bg-slate-800 p-4 rounded-lg overflow-x-auto my-4 font-mono text-sm text-slate-800 dark:text-slate-200"><code>' 
@@ -312,6 +402,20 @@ const renderMarkdown = (content: string, existingTitles?: Set<string>) => {
             html += line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + '\n';
             continue;
         }
+
+        // --- 2. テーブル処理 ---
+        // 行が '|' で始まり、かつ '|' で終わる場合（簡易判定）
+        if (trimmedLine.startsWith('|') && (trimmedLine.endsWith('|') || trimmedLine.length > 2)) {
+            tableBuffer.push(trimmedLine);
+            // もしこれが最後の行なら、ループ終了後に出力する必要があるが、
+            // 簡易的に次のループまたはループ外で処理される
+            continue; 
+        } else {
+            // テーブル行でなければ、溜まっているテーブルを出力
+            flushTable();
+        }
+
+        // --- 3. その他のMarkdown処理（既存のコード） ---
 
         if (line.startsWith('# ')) {
             html += `<h1 class="text-3xl font-bold mb-4 mt-2 text-slate-900 dark:text-white">${parseInline(line.slice(2), existingTitles)}</h1>`;
@@ -374,6 +478,9 @@ const renderMarkdown = (content: string, existingTitles?: Set<string>) => {
 
         html += `<p class="mb-2 text-slate-700 dark:text-slate-300 leading-relaxed">${parseInline(line, existingTitles)}</p>`;
     }
+
+    // ループ終了後にバッファに残っているテーブルがあれば出力
+    flushTable();
 
     return { __html: html };
 };
