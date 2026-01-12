@@ -1641,23 +1641,23 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                             </div>
                         </div>
                       )}
-                    {showPublishFeature && (
-                        <button
-                            onClick={() => {
-                                onUpdate(note.id, { isPublished: !note.isPublished });
-                            }}
-                            className={`p-1.5 rounded transition-colors ${
-                                note.isPublished 
-                                    ? 'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400' 
-                                    : 'text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
-                            }`}
-                            title={note.isPublished ? "Published (Public)" : "Unpublished (Private)"}
-                        >
-                            {note.isPublished ? <Eye size={18} /> : <EyeOff size={18} />}
-                        </button>
-                    )}
 
                   </div>
+                  {showPublishFeature && (
+                      <button
+                          onClick={() => {
+                              onUpdate(note.id, { isPublished: !note.isPublished });
+                          }}
+                          className={`p-1.5 rounded transition-colors ${
+                              note.isPublished 
+                                  ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400' 
+                                  : 'text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+                          }`}
+                          title={note.isPublished ? "Published (Public)" : "Unpublished (Private)"}
+                      >
+                          {note.isPublished ? <Eye size={18} /> : <EyeOff size={18} />}
+                      </button>
+                  )}
 
                 <div className="flex items-center gap-2 bg-gray-200 dark:bg-slate-800 rounded p-1">
                 <button
