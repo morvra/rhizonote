@@ -510,17 +510,25 @@ export const syncDropboxData = async (
         await Promise.all(batch.map(async (note) => {
             const path = getNotePath(note.title, note.folderId, mergedFolders);
             
-const fileContent = `---
-id: ${note.id}
-title: ${note.title}
-created: ${note.createdAt}
-updated: ${note.updatedAt}
-isBookmarked: ${note.isBookmarked || false}
-isPublished: ${note.isPublished || false}
-${note.bookmarkOrder !== undefined ? `bookmarkOrder: ${note.bookmarkOrder}` : ''}
-${note.deletedAt ? `deletedAt: ${note.deletedAt}` : ''}
----
-${note.content}`;
+            // Build frontmatter fields conditionally
+            const frontmatterLines: string[] = [
+                `id: ${note.id}`,
+                `title: ${note.title}`,
+                `created: ${note.createdAt}`,
+                `updated: ${note.updatedAt}`,
+                `isBookmarked: ${note.isBookmarked || false}`,
+                `isPublished: ${note.isPublished || false}`
+            ];
+            
+            // Add optional fields only if they exist
+            if (note.bookmarkOrder !== undefined) {
+                frontmatterLines.push(`bookmarkOrder: ${note.bookmarkOrder}`);
+            }
+            if (note.deletedAt !== undefined) {
+                frontmatterLines.push(`deletedAt: ${note.deletedAt}`);
+            }
+            
+            const fileContent = `---\n${frontmatterLines.join('\n')}\n---\n\n${note.content}`;
 
             const blob = new Blob([fileContent], { type: 'text/markdown' });
 
