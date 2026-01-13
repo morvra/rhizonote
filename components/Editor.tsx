@@ -1710,6 +1710,15 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                         )}
                     </div>
 
+                    {/* プレビュー切り替えボタン (PC) */}
+                    <button
+                        onClick={() => setMode(prev => prev === 'edit' ? 'preview' : 'edit')}
+                        className="p-1.5 rounded transition-colors text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 ml-1"
+                        title={mode === 'edit' ? "Switch to Reading View" : "Switch to Editing View"}
+                    >
+                        {mode === 'edit' ? <Eye size={18} /> : <Edit3 size={18} />}
+                    </button>
+
                     {showPublishFeature && (
                         <button
                             onClick={() => {
@@ -1725,15 +1734,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                             {note.isPublished ? <Globe size={18} /> : <Lock size={18} />}
                         </button>
                     )}
-
-                    {/* プレビュー切り替えボタン (PC) */}
-                    <button
-                        onClick={() => setMode(prev => prev === 'edit' ? 'preview' : 'edit')}
-                        className="p-1.5 rounded transition-colors text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 ml-1"
-                        title={mode === 'edit' ? "Switch to Reading View" : "Switch to Editing View"}
-                    >
-                        {mode === 'edit' ? <Eye size={18} /> : <Edit3 size={18} />}
-                    </button>
+                    
                 </div>
             )}
             
