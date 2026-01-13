@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Note } from '../types';
 import WikiLinkPopup from './WikiLinkPopup';
-import { Edit3, Eye, EyeOff, RefreshCw, Bold, Italic, Strikethrough, Code, Link as LinkIcon, FilePlus, Link2, Info, AlertTriangle, Merge } from 'lucide-react';
+import { Edit3, Eye, RefreshCw, Bold, Italic, Strikethrough, Code, Link as LinkIcon, FilePlus, Link2, Info, AlertTriangle, Merge, Globe, Lock, MoreVertical } from 'lucide-react';
 
 interface EditorProps {
   note: Note;
@@ -494,6 +494,7 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   const [currentLineIndex, setCurrentLineIndex] = useState<number>(-1);
   const [showPopup, setShowPopup] = useState(false);
@@ -1593,89 +1594,149 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                 className="bg-transparent text-xl font-bold text-slate-800 dark:text-slate-200 focus:outline-none w-full mr-4 placeholder-slate-400 dark:placeholder-slate-600 resize-none overflow-hidden"
                 placeholder="Note Title"
             />
-            <div className="flex items-center gap-2">
-                <div 
-                    className="relative"
-                    onMouseEnter={() => setShowInfo(true)}
-                    onMouseLeave={() => setShowInfo(false)}
-                >
+            {isMobile ? (
+                /* === スマホ用: ドロップダウンメニュー === */
+                <div className="relative shrink-0">
                     <button
-                        className={`p-1.5 rounded transition-colors ${showInfo ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
-                        title="Note Info"
+                        onClick={() => setShowMobileMenu(!showMobileMenu)}
+                        className="p-2 text-slate-500 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-full transition-colors"
                     >
-                        <Info size={18} />
+                        <MoreVertical size={20} />
                     </button>
 
-                    {showInfo && (
-                        /* ポップアップ本体 */
-                        <div className="absolute right-0 top-full pt-2 z-50">
-                            <div className="w-64 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl p-4 text-sm animate-in fade-in zoom-in-95 duration-100">
-                                <div className="space-y-3">
-                                    <div>
-                                        <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Created</div>
-                                        <div className="text-slate-700 dark:text-slate-300 font-mono text-xs">
-                                            {formatDate(note.createdAt)}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Updated</div>
-                                        <div className="text-slate-700 dark:text-slate-300 font-mono text-xs">
-                                            {formatDate(note.updatedAt)}
-                                        </div>
-                                    </div>
-                                    <div className="pt-2 border-t border-gray-100 dark:border-slate-800">
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Characters</span>
-                                            <span className="text-indigo-600 dark:text-indigo-400 font-bold font-mono">
-                                                {getCleanCharCount(displayContent).toLocaleString()}
+                    {showMobileMenu && (
+                        <>
+                            {/* メニュー外クリックで閉じるための透明な背景 */}
+                            <div 
+                                className="fixed inset-0 z-40" 
+                                onClick={() => setShowMobileMenu(false)}
+                            />
+                            
+                            {/* ドロップダウンメニュー本体 */}
+                            <div className="absolute right-0 top-full mt-1 w-64 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl p-2 z-50 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-100 origin-top-right">
+                                
+                                {/* プレビュー切り替え */}
+                                <button
+                                    onClick={() => {
+                                        setMode(prev => prev === 'edit' ? 'preview' : 'edit');
+                                        setShowMobileMenu(false);
+                                    }}
+                                    className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-md w-full text-left"
+                                >
+                                    {mode === 'edit' ? <Eye size={18} /> : <Edit3 size={18} />}
+                                    <span>{mode === 'edit' ? 'Switch to Reading View' : 'Switch to Editing View'}</span>
+                                </button>
+
+                                {/* 公開設定 (有効な場合のみ) */}
+                                {showPublishFeature && (
+                                    <button
+                                        onClick={() => {
+                                            onUpdate(note.id, { isPublished: !note.isPublished });
+                                        }}
+                                        className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-md w-full text-left"
+                                    >
+                                        {note.isPublished ? <Globe size={18} className="text-indigo-500" /> : <Lock size={18} />}
+                                        <div className="flex flex-col">
+                                            <span>{note.isPublished ? 'Published (Public)' : 'Private Note'}</span>
+                                            <span className="text-[10px] text-slate-400 font-normal">
+                                                {note.isPublished ? 'Visible on your site' : 'Only visible to you'}
                                             </span>
                                         </div>
-                                        <div className="flex justify-between items-center mt-1">
-                                            <span className="text-xs text-slate-400">Raw Length</span>
-                                            <span className="text-slate-500 dark:text-slate-500 text-xs font-mono">
-                                                {displayContent.length.toLocaleString()}
-                                            </span>
+                                    </button>
+                                )}
+
+                                {/* 情報セクション (メニュー内に埋め込み) */}
+                                <div className="border-t border-gray-100 dark:border-slate-800 mt-1 pt-3 px-3 pb-2">
+                                    <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                                        <Info size={12} /> Note Info
+                                    </div>
+                                    <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
+                                         <span>Created</span>
+                                         <span className="font-mono text-right">{formatDate(note.createdAt).split(',')[0]}</span>
+                                         <span>Updated</span>
+                                         <span className="font-mono text-right">{formatDate(note.updatedAt).split(',')[0]}</span>
+                                         <span>Chars</span>
+                                         <span className="font-mono text-right font-bold text-indigo-600 dark:text-indigo-400">
+                                            {getCleanCharCount(displayContent).toLocaleString()}
+                                         </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+            ) : (
+                /* === PC用: 既存の横並びボタン === */
+                <div className="flex items-center gap-2">
+                    <div 
+                        className="relative"
+                        onMouseEnter={() => setShowInfo(true)}
+                        onMouseLeave={() => setShowInfo(false)}
+                    >
+                        <button
+                            className={`p-1.5 rounded transition-colors ${showInfo ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
+                            title="Note Info"
+                        >
+                            <Info size={18} />
+                        </button>
+
+                        {showInfo && (
+                            <div className="absolute right-0 top-full pt-2 z-50">
+                                <div className="w-64 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl p-4 text-sm animate-in fade-in zoom-in-95 duration-100">
+                                    <div className="space-y-3">
+                                        <div>
+                                            <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Created</div>
+                                            <div className="text-slate-700 dark:text-slate-300 font-mono text-xs">
+                                                {formatDate(note.createdAt)}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Updated</div>
+                                            <div className="text-slate-700 dark:text-slate-300 font-mono text-xs">
+                                                {formatDate(note.updatedAt)}
+                                            </div>
+                                        </div>
+                                        <div className="pt-2 border-t border-gray-100 dark:border-slate-800">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Characters</span>
+                                                <span className="text-indigo-600 dark:text-indigo-400 font-bold font-mono">
+                                                    {getCleanCharCount(displayContent).toLocaleString()}
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                      )}
+                        )}
+                    </div>
 
-                  </div>
-                  {showPublishFeature && (
-                      <button
-                          onClick={() => {
-                              onUpdate(note.id, { isPublished: !note.isPublished });
-                          }}
-                          className={`p-1.5 rounded transition-colors ${
-                              note.isPublished 
-                                  ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400' 
-                                  : 'text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
-                          }`}
-                          title={note.isPublished ? "Published (Public)" : "Unpublished (Private)"}
-                      >
-                          {note.isPublished ? <Eye size={18} /> : <EyeOff size={18} />}
-                      </button>
-                  )}
+                    {showPublishFeature && (
+                        <button
+                            onClick={() => {
+                                onUpdate(note.id, { isPublished: !note.isPublished });
+                            }}
+                            className={`p-1.5 rounded transition-colors ${
+                                note.isPublished 
+                                    ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400' 
+                                    : 'text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+                            }`}
+                            title={note.isPublished ? "Published (Public)" : "Unpublished (Private)"}
+                        >
+                            {note.isPublished ? <Globe size={18} /> : <Lock size={18} />}
+                        </button>
+                    )}
 
-                <div className="flex items-center gap-2 bg-gray-200 dark:bg-slate-800 rounded p-1">
-                <button
-                    onClick={() => setMode('edit')}
-                    className={`p-1.5 rounded transition-colors ${mode === 'edit' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
-                    title="Edit Mode (Ctrl/Cmd + E)"
-                >
-                    <Edit3 size={16} />
-                </button>
-                <button
-                    onClick={() => setMode('preview')}
-                    className={`p-1.5 rounded transition-colors ${mode === 'preview' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
-                    title="Reading Mode (Ctrl/Cmd + E)"
-                >
-                    <Eye size={16} />
-                </button>
+                    {/* プレビュー切り替えボタン (PC) */}
+                    <button
+                        onClick={() => setMode(prev => prev === 'edit' ? 'preview' : 'edit')}
+                        className="p-1.5 rounded transition-colors text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 ml-1"
+                        title={mode === 'edit' ? "Switch to Reading View" : "Switch to Editing View"}
+                    >
+                        {mode === 'edit' ? <Eye size={18} /> : <Edit3 size={18} />}
+                    </button>
                 </div>
-            </div>
+            )}
+            
         </div>
 
         {/* Duplicate Warning Banner */}

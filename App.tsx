@@ -6,7 +6,7 @@ import GridView from './components/GridView';
 import CommandPalette, { CommandItem } from './components/CommandPalette';
 import { Note, Folder, SortField, SortDirection, Theme } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS } from './constants';
-import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle, Shuffle, Eye, Bookmark, Terminal, Download, Trash, FileJson, LayoutTemplate, Command, LayoutGrid } from 'lucide-react';
+import { Columns, Minimize2, Menu, ChevronLeft, ChevronRight, X, Moon, Sun, Monitor, Type, PanelLeft, Calendar, Plus, Keyboard, CheckSquare, Cloud, RefreshCw, LogOut, FileText, Clock, ArrowDownAz, ArrowUp, ArrowDown, Check, AlertCircle, Shuffle, Eye, Bookmark, Terminal, Download, Trash, FileJson, LayoutTemplate, Command, LayoutGrid, Globe } from 'lucide-react';
 import { getDropboxAuthUrl, parseAuthTokenFromUrl, syncDropboxData, getNotePath, getFolderPath, RenameOperation, exchangeCodeForToken } from './utils/dropboxService';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
@@ -1962,7 +1962,7 @@ export default function App() {
                 <div className="space-y-3 pt-4 border-t border-gray-200 dark:border-slate-800">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-slate-300">
-                            <Eye size={16} />
+                            <Globe size={16} />
                             <span>Publishing Feature</span>
                         </div>
                         <button
