@@ -1620,6 +1620,7 @@ export default function App() {
         onRestoreFolder={handleRestoreFolder}
         onPermanentDeleteNote={handlePermanentDeleteNote}
         onPermanentDeleteFolder={handlePermanentDeleteFolder}
+        onTitleClick={handleOpenGridView}
       />
 
       {sidebarVisible && (

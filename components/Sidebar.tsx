@@ -29,6 +29,7 @@ interface SidebarProps {
   onRestoreFolder: (id: string) => void;
   onPermanentDeleteNote: (id: string) => void;
   onPermanentDeleteFolder: (id: string) => void;
+  onTitleClick?: () => void;
 }
 
 interface NoteItemProps {
@@ -427,7 +428,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   onRestoreNote,
   onRestoreFolder,
   onPermanentDeleteNote,
-  onPermanentDeleteFolder
+  onPermanentDeleteFolder,
+  onTitleClick
 }) => {
   const [search, setSearch] = React.useState('');
   const [trashOpen, setTrashOpen] = React.useState(false);
@@ -490,7 +492,13 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div className={`flex flex-col h-full w-full ${!width ? 'w-64' : ''}`}> 
             <div className="p-4 border-b border-gray-200 dark:border-slate-800 shrink-0">
             <div className="flex items-center justify-between mb-4">
-                <h1 className="font-bold text-xl md:text-lg text-slate-800 dark:text-slate-200 tracking-tight">Rhizonote</h1>
+                <h1 
+                    onClick={onTitleClick}
+                    className="font-bold text-xl md:text-lg text-slate-800 dark:text-slate-200 tracking-tight cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors select-none"
+                    title="Go to All Notes (Grid View)"
+                >
+                    Rhizonote
+                </h1>
                 <div className="flex items-center gap-1">
                 <button
                     onClick={onOpenSettings}
