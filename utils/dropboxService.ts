@@ -510,7 +510,7 @@ export const syncDropboxData = async (
         await Promise.all(batch.map(async (note) => {
             const path = getNotePath(note.title, note.folderId, mergedFolders);
             
-            // Build frontmatter fields conditionally
+            // Build frontmatter fields conditionally 
             const frontmatterLines: string[] = [
                 `id: ${note.id}`,
                 `title: ${note.title}`,
