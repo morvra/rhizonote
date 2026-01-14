@@ -62,6 +62,154 @@ const getCleanCharCount = (text: string) => {
     return text.replace(/\s/g, '').length;
 };
 
+// --- Memoized Backdrop Component ---
+interface BackdropLineProps {
+    line: string;
+    index: number;
+    isActive: boolean;
+    activeSearchQuery: string;
+    existingTitles: Set<string>;
+    hoveredImageUrl: string | null;
+}
+
+const BackdropLine = React.memo(({ 
+    line, 
+    index, 
+    isActive, 
+    activeSearchQuery, 
+    existingTitles, 
+    hoveredImageUrl 
+}: BackdropLineProps) => {
+    
+    // アクティブ行（カーソルがある行）は装飾をせず、検索ハイライトのみ行う
+    if (isActive) {
+        return (
+            <div 
+                className="whitespace-pre-wrap break-words bg-transparent min-h-[1.5em] w-full text-slate-800 dark:text-slate-300"
+                data-line={index}
+            >
+                {line ? highlightSearch(line, activeSearchQuery) : <br/>}
+            </div>
+        );
+    }
+
+    let contentNode: React.ReactNode = highlightSearch(line, activeSearchQuery);
+    const regex = /(`[^`]+`|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\[\[[^\]]+\]\]|https?:\/\/[^\s)]+)/g;
+    const parts = line.split(regex);
+    
+    if (parts.length > 1) {
+        contentNode = parts.map((part, i) => {
+            if (part.startsWith('`')) {
+                return <span key={i} className="text-amber-600 dark:text-amber-200">{highlightSearch(part, activeSearchQuery)}</span>;
+            }
+            if (part.startsWith('![') && part.includes('](') && part.endsWith(')')) {
+                const match = part.match(/!\[([^\]]*)\]\(([^)]+)\)/);
+                if (match) {
+                    const alt = match[1];
+                    const url = match[2];
+                    return (
+                        <span key={i} className="text-amber-600 dark:text-amber-500 relative">
+                            {'!['}{highlightSearch(alt, activeSearchQuery)}{']('}
+                            <span 
+                                className="underline decoration-amber-500 cursor-pointer pointer-events-auto relative z-10"
+                                data-url={url}
+                                data-line-index={index}
+                                data-image-preview={url}
+                            >
+                                {highlightSearch(url, activeSearchQuery)}
+                            </span>
+                            {')'}
+                            <span 
+                                className={`
+                                    absolute left-0 top-full mt-2 z-50 pointer-events-none select-none px-2
+                                    ${hoveredImageUrl === url ? 'block' : 'hidden'}
+                                `}
+                            >
+                                <div className="bg-white dark:bg-slate-800 p-1 border border-gray-200 dark:border-slate-700 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+                                    <img 
+                                        src={url} 
+                                        alt={alt} 
+                                        className="max-w-[360px] max-h-[300px] object-contain bg-gray-50 dark:bg-slate-900"
+                                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                    />
+                                </div>
+                            </span>
+                        </span>
+                    );
+                }
+                return <span key={i} className="text-amber-600 dark:text-amber-500">{highlightSearch(part, activeSearchQuery)}</span>;
+            }
+            if (part.startsWith('[') && !part.startsWith('[[') && part.includes('](') && part.endsWith(')')) {
+                const match = part.match(/\[([^\]]+)\]\(([^)]+)\)/);
+                if (match) {
+                    const text = match[1];
+                    const url = match[2];
+                    return (
+                        <span key={i} className="text-blue-600 dark:text-blue-400">
+                            {'['}
+                            <span className="text-blue-600 dark:text-blue-400">{highlightSearch(text, activeSearchQuery)}</span>
+                            {']('}
+                            <span 
+                                className="underline decoration-blue-500 cursor-pointer pointer-events-auto relative"
+                                data-url={url}
+                                data-line-index={index}
+                            >
+                                {highlightSearch(url, activeSearchQuery)}
+                            </span>
+                            {')'}
+                        </span>
+                    );
+                }
+                return <span key={i} className="text-blue-600 dark:text-blue-400">{highlightSearch(part, activeSearchQuery)}</span>;
+            }
+            if (part.startsWith('[[') && part.endsWith(']]')) {
+                const title = part.slice(2, -2);
+                const exists = existingTitles.has(title);
+                return (
+                    <span 
+                        key={i} 
+                        className={`
+                            ${exists 
+                                ? 'text-indigo-600 dark:text-indigo-400 underline decoration-indigo-500 pointer-events-auto'
+                                : 'text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 underline opacity-60 pointer-events-auto'
+                            }
+                            relative
+                        `}
+                        data-link-title={title}
+                        data-line-index={index}
+                    >
+                        {highlightSearch(part, activeSearchQuery)}
+                    </span>
+                );
+            }
+            if (part.match(/^https?:\/\//)) {
+                return (
+                    <span 
+                        key={i} 
+                        className="text-blue-600 dark:text-blue-400 underline decoration-blue-500 pointer-events-auto relative"
+                        data-url={part}
+                        data-line-index={index}
+                    >
+                        {highlightSearch(part, activeSearchQuery)}
+                    </span>
+                );
+            }
+            return <span key={i}>{highlightSearch(part, activeSearchQuery)}</span>;
+        });
+    } else {
+        if (line === '') contentNode = <br/>;
+    }
+    
+    return (
+        <div 
+            className="whitespace-pre-wrap break-words bg-white dark:bg-slate-950 min-h-[1.5em] w-full" 
+            data-line={index}
+        >
+            {contentNode}
+        </div>
+    );
+});
+
 interface BackdropProps {
     content: string;
     activeLineIndex: number;
@@ -71,7 +219,6 @@ interface BackdropProps {
     fontSize: number;
 }
 
-// --- Memoized Backdrop Component ---
 const Backdrop = React.memo(React.forwardRef<HTMLDivElement, BackdropProps>(({ 
     content, 
     activeLineIndex, 
@@ -89,137 +236,17 @@ const Backdrop = React.memo(React.forwardRef<HTMLDivElement, BackdropProps>(({
             style={{ fontSize: `${fontSize}px`, lineHeight: 1.6 }}
             aria-hidden="true"
         >
-            {lines.map((line, index) => {
-                const isActive = index === activeLineIndex;
-                
-                if (isActive) {
-                    return (
-                        <div 
-                            key={index} 
-                            className="whitespace-pre-wrap break-words bg-transparent min-h-[1.5em] w-full text-slate-800 dark:text-slate-300"
-                            data-line={index}
-                        >
-                            {line ? highlightSearch(line, activeSearchQuery) : <br/>}
-                        </div>
-                    );
-                }
-
-                let contentNode: React.ReactNode = highlightSearch(line, activeSearchQuery);
-                const regex = /(`[^`]+`|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\[\[[^\]]+\]\]|https?:\/\/[^\s)]+)/g;
-                const parts = line.split(regex);
-                
-                if (parts.length > 1) {
-                    contentNode = parts.map((part, i) => {
-                        if (part.startsWith('`')) {
-                            return <span key={i} className="text-amber-600 dark:text-amber-200">{highlightSearch(part, activeSearchQuery)}</span>;
-                        }
-                        if (part.startsWith('![') && part.includes('](') && part.endsWith(')')) {
-                            const match = part.match(/!\[([^\]]*)\]\(([^)]+)\)/);
-                            if (match) {
-                                const alt = match[1];
-                                const url = match[2];
-                                return (
-                                    <span key={i} className="text-amber-600 dark:text-amber-500 relative">
-                                        {'!['}{highlightSearch(alt, activeSearchQuery)}{']('}
-                                        <span 
-                                            className="underline decoration-amber-500 cursor-pointer pointer-events-auto relative z-10"
-                                            data-url={url}
-                                            data-line-index={index}
-                                            data-image-preview={url}
-                                        >
-                                            {highlightSearch(url, activeSearchQuery)}
-                                        </span>
-                                        {')'}
-                                        <span 
-                                            className={`
-                                                absolute left-0 top-full mt-2 z-50 pointer-events-none select-none px-2
-                                                ${hoveredImageUrl === url ? 'block' : 'hidden'}
-                                            `}
-                                        >
-                                            <div className="bg-white dark:bg-slate-800 p-1 border border-gray-200 dark:border-slate-700 shadow-xl animate-in fade-in zoom-in-95 duration-150">
-                                                <img 
-                                                    src={url} 
-                                                    alt={alt} 
-                                                    className="max-w-[360px] max-h-[300px] object-contain bg-gray-50 dark:bg-slate-900"
-                                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                                />
-                                            </div>
-                                        </span>
-                                    </span>
-                                );
-                            }
-                            return <span key={i} className="text-amber-600 dark:text-amber-500">{highlightSearch(part, activeSearchQuery)}</span>;
-                        }
-                        if (part.startsWith('[') && !part.startsWith('[[') && part.includes('](') && part.endsWith(')')) {
-                            const match = part.match(/\[([^\]]+)\]\(([^)]+)\)/);
-                            if (match) {
-                                const text = match[1];
-                                const url = match[2];
-                                return (
-                                    <span key={i} className="text-blue-600 dark:text-blue-400">
-                                        {'['}
-                                        <span className="text-blue-600 dark:text-blue-400">{highlightSearch(text, activeSearchQuery)}</span>
-                                        {']('}
-                                        <span 
-                                            className="underline decoration-blue-500 cursor-pointer pointer-events-auto relative"
-                                            data-url={url}
-                                            data-line-index={index}
-                                        >
-                                            {highlightSearch(url, activeSearchQuery)}
-                                        </span>
-                                        {')'}
-                                    </span>
-                                );
-                            }
-                            return <span key={i} className="text-blue-600 dark:text-blue-400">{highlightSearch(part, activeSearchQuery)}</span>;
-                        }
-                        if (part.startsWith('[[') && part.endsWith(']]')) {
-                            const title = part.slice(2, -2);
-                            const exists = existingTitles.has(title);
-                            return (
-                                <span 
-                                    key={i} 
-                                    className={`
-                                        ${exists 
-                                            ? 'text-indigo-600 dark:text-indigo-400 underline decoration-indigo-500 pointer-events-auto'
-                                            : 'text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 underline opacity-60 pointer-events-auto'
-                                        }
-                                        relative
-                                    `}
-                                    data-link-title={title}
-                                    data-line-index={index}
-                                >
-                                    {highlightSearch(part, activeSearchQuery)}
-                                </span>
-                            );
-                        }
-                        if (part.match(/^https?:\/\//)) {
-                            return (
-                                <span 
-                                    key={i} 
-                                    className="text-blue-600 dark:text-blue-400 underline decoration-blue-500 pointer-events-auto relative"
-                                    data-url={part}
-                                    data-line-index={index}
-                                >
-                                    {highlightSearch(part, activeSearchQuery)}
-                                </span>
-                            );
-                        }
-                        return <span key={i}>{highlightSearch(part, activeSearchQuery)}</span>;
-                    });
-                } else {
-                    if (line === '') contentNode = <br/>;
-                }
-                return (
-                    <div 
-                        key={index} 
-                        className="whitespace-pre-wrap break-words bg-white dark:bg-slate-950 min-h-[1.5em] w-full" 
-                        data-line={index}
-                    >
-                        {contentNode}
-                    </div>
-                );
-            })}
+            {lines.map((line, index) => (
+                <BackdropLine
+                    key={index}
+                    line={line}
+                    index={index}
+                    isActive={index === activeLineIndex}
+                    activeSearchQuery={activeSearchQuery}
+                    existingTitles={existingTitles}
+                    hoveredImageUrl={hoveredImageUrl}
+                />
+            ))}
         </div>
     );
 }));
