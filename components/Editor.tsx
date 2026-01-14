@@ -927,6 +927,20 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
         const timer = setTimeout(() => {
             const targetLine = highlightedLine.lineIndex;
             setCurrentLineIndex(targetLine);
+            const lines = displayContent.split('\n');
+            if (targetLine < lines.length) {
+                // 対象行の前までの文字数を計算（各行の長さ + 改行コード1文字）
+                const charIndex = lines.slice(0, targetLine).reduce((acc, line) => acc + line.length + 1, 0);
+                
+                if (textareaRef.current) {
+                    textareaRef.current.focus();
+                    textareaRef.current.setSelectionRange(charIndex, charIndex);
+                    
+                    // エディタの内部状態（カーソル位置管理）も更新
+                    setCursorIndex(charIndex);
+                    prevSelectionRef.current = charIndex;
+                }
+            }
             if (backdropRef.current) {
                 const lineEl = backdropRef.current.querySelector(`[data-line="${targetLine}"]`);
                 if (lineEl) {
