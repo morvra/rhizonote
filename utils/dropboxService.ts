@@ -293,7 +293,7 @@ export const syncDropboxData = async (
                 const text = await blob.text();
 
                 // Parse Metadata
-                const match = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)?$/);
+                const match = text.match(/^---\n([\s\S]*?)\n---\n{0,2}([\s\S]*)?$/);
                 let metadata: any = {};
                 let content = text;
 
