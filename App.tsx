@@ -1553,6 +1553,7 @@ export default function App() {
             <Editor
                 note={note}
                 allNotes={notes}
+                folders={folders} 
                 onUpdate={handleUpdateNote}
                 onLinkClick={handleLinkClick}
                 onRefactorLinks={handleRefactorLinks}

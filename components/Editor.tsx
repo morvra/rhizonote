@@ -1,11 +1,34 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
-import { Note } from '../types';
+import { Note, Folder } from '../types';
 import WikiLinkPopup from './WikiLinkPopup';
-import { Edit3, Eye, RefreshCw, Bold, Italic, Strikethrough, Code, Link as LinkIcon, FilePlus, Link2, Info, AlertTriangle, Merge, Globe, Lock, MoreVertical } from 'lucide-react';
+import { Edit3, Eye, RefreshCw, Bold, Italic, Strikethrough, Code, Link as LinkIcon, FilePlus, Link2, Info, AlertTriangle, Merge, Globe, Lock, MoreVertical, Folder as FolderIcon, FolderOpen, ChevronDown } from 'lucide-react';
+
+// フォルダの階層構造をフラットなリスト（インデント情報付き）に変換するヘルパー
+const getFolderOptions = (folders: Folder[], parentId: string | null = null, depth = 0): { id: string | null, name: string, depth: number }[] => {
+    const result: { id: string | null, name: string, depth: number }[] = [];
+    
+    // Rootを追加 (初回のみ)
+    if (parentId === null && depth === 0) {
+        result.push({ id: null, name: 'Root (No Folder)', depth: 0 });
+    }
+
+    const children = folders
+        .filter(f => f.parentId === parentId && !f.deletedAt)
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+    for (const child of children) {
+        result.push({ id: child.id, name: child.name, depth });
+        // 再帰呼び出し
+        result.push(...getFolderOptions(folders, child.id, depth + 1));
+    }
+
+    return result;
+};
 
 interface EditorProps {
   note: Note;
   allNotes: Note[];
+  folders: Folder[];
   onUpdate: (id: string, updates: Partial<Note>) => void;
   onLinkClick: (title: string) => void;
   onRefactorLinks: (oldTitle: string, newTitle: string) => void;
@@ -513,7 +536,7 @@ const renderMarkdown = (content: string, existingTitles?: Set<string>) => {
     return { __html: html };
 };
 
-const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, onRefactorLinks, onCreateNoteWithContent, onMergeNotes, fontSize, isActive = true, highlightedLine, searchQuery, showPublishFeature = false }) => {
+const Editor: React.FC<EditorProps> = ({ note, allNotes, folders, onUpdate, onLinkClick, onRefactorLinks, onCreateNoteWithContent, onMergeNotes, fontSize, isActive = true, highlightedLine, searchQuery, showPublishFeature = false }) => {
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -537,6 +560,9 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
   const isLinkClickRef = useRef(false);
   const touchCursorRef = useRef<{ startX: number; startY: number; startSelection: number; active: boolean } | null>(null);
   const isComposingRef = useRef(false);
+
+  const currentFolder = folders.find(f => f.id === note.folderId);
+  const folderOptions = useMemo(() => getFolderOptions(folders), [folders]);
 
   // Mobile detection
   useEffect(() => {
@@ -1691,6 +1717,40 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                                     <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
                                         <Info size={12} /> Note Info
                                     </div>
+                                    <div className="mb-3">
+                                         <div className="text-[10px] text-slate-400 mb-1 font-medium">Location</div>
+                                         <div className="relative group/select">
+                                            <div className="flex items-center justify-between w-full px-2 py-1.5 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded text-slate-700 dark:text-slate-300 text-xs">
+                                                <div className="flex items-center gap-2 truncate">
+                                                    {currentFolder ? <FolderOpen size={14} className="text-indigo-500" /> : <FolderIcon size={14} className="text-slate-400" />}
+                                                    <span className="truncate font-medium">
+                                                        {currentFolder ? currentFolder.name : 'Root (No Folder)'}
+                                                    </span>
+                                                </div>
+                                                <ChevronDown size={12} className="text-slate-400" />
+                                            </div>
+                                            
+                                            <select
+                                                value={note.folderId || ''}
+                                                onChange={(e) => {
+                                                    const newFolderId = e.target.value === '' ? null : e.target.value;
+                                                    onUpdate(note.id, { folderId: newFolderId });
+                                                }}
+                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-200"
+                                            >
+                                                {folderOptions.map((opt, i) => (
+                                                    <option 
+                                                        key={i} 
+                                                        value={opt.id || ''} 
+                                                        className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-200"
+                                                    >
+                                                        {'\u00A0'.repeat(opt.depth * 2) + (opt.depth > 0 ? '└ ' : '') + opt.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
                                     <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
                                          <span>Created</span>
                                          <span className="font-mono text-right">{formatDate(note.createdAt).split(',')[0]}</span>
@@ -1716,27 +1776,69 @@ const Editor: React.FC<EditorProps> = ({ note, allNotes, onUpdate, onLinkClick, 
                     >
                         <button
                             className={`p-1.5 rounded transition-colors ${showInfo ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
-                            title="Note Info"
+                            title="Note Info & Location"
                         >
                             <Info size={18} />
                         </button>
 
                         {showInfo && (
                             <div className="absolute right-0 top-full pt-2 z-50">
-                                <div className="w-64 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl p-4 text-sm animate-in fade-in zoom-in-95 duration-100">
-                                    <div className="space-y-3">
+                                <div className="w-72 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl p-4 text-sm animate-in fade-in zoom-in-95 duration-100">
+                                    <div className="space-y-4">
+                                        
                                         <div>
-                                            <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Created</div>
-                                            <div className="text-slate-700 dark:text-slate-300 font-mono text-xs">
-                                                {formatDate(note.createdAt)}
+                                            <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1 flex items-center gap-1">
+                                                <FolderIcon size={10} /> Location
+                                            </div>
+                                            <div className="relative group/select">
+                                                <div className="flex items-center justify-between w-full px-2 py-1.5 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded text-slate-700 dark:text-slate-300 text-xs">
+                                                    <div className="flex items-center gap-2 truncate">
+                                                        {currentFolder ? <FolderOpen size={14} className="text-indigo-500" /> : <FolderIcon size={14} className="text-slate-400" />}
+                                                        <span className="truncate font-medium">
+                                                            {currentFolder ? currentFolder.name : 'Root (No Folder)'}
+                                                        </span>
+                                                    </div>
+                                                    <ChevronDown size={12} className="text-slate-400" />
+                                                </div>
+                                                
+                                                {/* 透明なSelectを重ねて操作性を確保 */}
+                                                <select
+                                                    value={note.folderId || ''}
+                                                    onChange={(e) => {
+                                                        const newFolderId = e.target.value === '' ? null : e.target.value;
+                                                        onUpdate(note.id, { folderId: newFolderId });
+                                                    }}
+                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-200"
+                                                >
+                                                    {folderOptions.map((opt, i) => (
+                                                        <option 
+                                                            key={i} 
+                                                            value={opt.id || ''}
+                                                            className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-200"
+                                                        >
+                                                            {/* 階層表現 */}
+                                                            {'\u00A0'.repeat(opt.depth * 2) + (opt.depth > 0 ? '└ ' : '') + opt.name}
+                                                        </option>
+                                                    ))}
+                                                </select>
                                             </div>
                                         </div>
-                                        <div>
-                                            <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Updated</div>
-                                            <div className="text-slate-700 dark:text-slate-300 font-mono text-xs">
-                                                {formatDate(note.updatedAt)}
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Created</div>
+                                                <div className="text-slate-700 dark:text-slate-300 font-mono text-xs">
+                                                    {formatDate(note.createdAt)}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Updated</div>
+                                                <div className="text-slate-700 dark:text-slate-300 font-mono text-xs">
+                                                    {formatDate(note.updatedAt)}
+                                                </div>
                                             </div>
                                         </div>
+
                                         <div className="pt-2 border-t border-gray-100 dark:border-slate-800">
                                             <div className="flex justify-between items-center">
                                                 <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Characters</span>
