@@ -115,7 +115,8 @@ export const syncDropboxData = async (
     localFolders: Folder[], 
     pathsToDelete: string[] = [],
     renames: RenameOperation[] = [],
-    unsyncedNoteIds: Set<string> = new Set()
+    unsyncedNoteIds: Set<string> = new Set(),
+    showPublishFeature: boolean = false
 ): Promise<SyncData> => {
   
   // Initialize Dropbox client with Refresh Token if available (Preferred)
@@ -517,10 +518,12 @@ export const syncDropboxData = async (
                 `created: ${note.createdAt}`,
                 `updated: ${note.updatedAt}`,
                 `isBookmarked: ${note.isBookmarked || false}`,
-                `isPublished: ${note.isPublished || false}`
             ];
             
-            // Add optional fields only if they exist
+            if (showPublishFeature) {
+                frontmatterLines.push(`isPublished: ${note.isPublished || false}`);
+            }
+            
             if (note.bookmarkOrder !== undefined) {
                 frontmatterLines.push(`bookmarkOrder: ${note.bookmarkOrder}`);
             }

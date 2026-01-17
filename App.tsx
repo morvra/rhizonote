@@ -552,7 +552,8 @@ export default function App() {
               currentFolders, 
               deletedPaths, 
               pendingRenames,
-              unsyncedNoteIds.current
+              unsyncedNoteIds.current,
+              showPublishFeature
           );
           
           if (data) {
