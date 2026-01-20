@@ -1544,6 +1544,7 @@ export default function App() {
               <GridView 
                 notes={notes} 
                 onSelectNote={(id, query) => openNote(id, query)} 
+                showPublishFeature={showPublishFeature}
               />
           );
       }

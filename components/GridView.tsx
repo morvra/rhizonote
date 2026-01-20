@@ -5,6 +5,7 @@ import { Search, X, Clock, Calendar, ArrowDownAz, ArrowUp, ArrowDown, Globe } fr
 interface GridViewProps {
   notes: Note[];
   onSelectNote: (id: string, query?: string) => void;
+  showPublishFeature?: boolean;
 }
 
 const getThumbnail = (content: string): string | null => {
@@ -27,22 +28,24 @@ const getSnippet = (content: string): string => {
     .slice(0, 150);
 };
 
-const GridView: React.FC<GridViewProps> = ({ notes, onSelectNote }) => {
+const GridView: React.FC<GridViewProps> = ({ notes, onSelectNote, showPublishFeature = false }) => {
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<SortField>('updated');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  
+  // 公開済みのみ表示するトグル用ステート
   const [showPublishedOnly, setShowPublishedOnly] = useState(false);
 
   const filteredNotes = useMemo(() => {
     // Active notes only
     let activeNotes = notes.filter(n => !n.deletedAt);
     
-    // Filter by Published status
-    if (showPublishedOnly) {
+    // Filter by Published status (機能が有効かつトグルがオンの場合)
+    if (showPublishFeature && showPublishedOnly) {
         activeNotes = activeNotes.filter(n => n.isPublished);
     }
 
-    // Filter
+    // Filter by Search
     if (search) {
         const lowerQuery = search.toLowerCase();
         activeNotes = activeNotes.filter(n => 
@@ -64,7 +67,7 @@ const GridView: React.FC<GridViewProps> = ({ notes, onSelectNote }) => {
         
         return sortDirection === 'asc' ? result : -result;
     });
-  }, [notes, search, sortField, sortDirection, showPublishedOnly]);
+  }, [notes, search, sortField, sortDirection, showPublishedOnly, showPublishFeature]);
 
   const SortButton = ({ field, icon: Icon, label }: { field: SortField, icon: any, label: string }) => (
       <button
@@ -125,19 +128,21 @@ const GridView: React.FC<GridViewProps> = ({ notes, onSelectNote }) => {
                         )}
                     </div>
 
-                    {/* Published Filter Toggle */}
-                    <button
-                        onClick={() => setShowPublishedOnly(!showPublishedOnly)}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors border ${
-                            showPublishedOnly
-                                ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
-                                : 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-800 text-slate-500 hover:bg-gray-50 dark:hover:bg-slate-800 dark:text-slate-400'
-                        }`}
-                        title={showPublishedOnly ? "Show All Notes" : "Show Published Only"}
-                    >
-                        <Globe size={14} />
-                        <span className="hidden sm:inline">Published</span>
-                    </button>
+                    {/* Published Filter Toggle (機能が有効な場合のみ表示) */}
+                    {showPublishFeature && (
+                        <button
+                            onClick={() => setShowPublishedOnly(!showPublishedOnly)}
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors border ${
+                                showPublishedOnly
+                                    ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+                                    : 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-800 text-slate-500 hover:bg-gray-50 dark:hover:bg-slate-800 dark:text-slate-400'
+                            }`}
+                            title={showPublishedOnly ? "Show All Notes" : "Show Published Only"}
+                        >
+                            <Globe size={14} />
+                            <span className="hidden sm:inline">Published</span>
+                        </button>
+                    )}
 
                     {/* Sort Controls */}
                     <div className="flex items-center gap-1 bg-gray-50 dark:bg-slate-950 p-1 rounded-lg border border-gray-200 dark:border-slate-800 shrink-0">
