@@ -440,16 +440,27 @@ const Sidebar: React.FC<SidebarProps> = ({
   const activeFolders = folders.filter(f => !f.deletedAt);
   const trashedFolders = folders.filter(f => f.deletedAt);
 
-  const filteredNotes = activeNotes.filter(
-    (n) =>
-      n.title.toLowerCase().includes(search.toLowerCase()) ||
-      n.content.toLowerCase().includes(search.toLowerCase())
-  );
+  // Filter Logic handling 'is:published' command
+  const isPublishedFilter = search.includes('is:published');
+  const cleanSearch = search.replace('is:published', '').trim();
+
+  const filteredNotes = activeNotes.filter((n) => {
+      // 1. Filter by published if command is present
+      if (isPublishedFilter && !n.isPublished) return false;
+
+      // 2. Standard Search
+      if (!cleanSearch) return true;
+      return (
+        n.title.toLowerCase().includes(cleanSearch.toLowerCase()) ||
+        n.content.toLowerCase().includes(cleanSearch.toLowerCase())
+      );
+  });
 
   const bookmarkedNotes = filteredNotes
     .filter((n) => n.isBookmarked)
     .sort((a, b) => (a.bookmarkOrder || 0) - (b.bookmarkOrder || 0));
   
+  // Force search mode if typing text OR using the filter command
   const isSearching = search.length > 0;
 
   const rootFolders = activeFolders.filter(f => f.parentId === null);
@@ -528,7 +539,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 <Search size={16} className="absolute left-3 top-3 md:top-2.5 text-slate-500 dark:text-slate-500 md:w-[14px] md:h-[14px]" />
                 <input
                     type="text"
-                    placeholder="Search..."
+                    placeholder="Search... (try is:published)"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     className="w-full bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 text-base md:text-sm rounded pl-10 md:pl-9 pr-10 md:pr-9 py-2 border border-gray-300 dark:border-slate-800 focus:border-indigo-500 focus:outline-none placeholder-slate-400 dark:placeholder-slate-600"
@@ -575,7 +586,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 /* Flat list for search results */
                 <div>
                     <div className="px-3 py-1 text-xs md:text-[10px] font-semibold text-slate-500 dark:text-slate-600 uppercase tracking-wider mb-1">
-                    Search Results
+                    {cleanSearch ? 'Search Results' : 'Filtered Notes'}
                     </div>
                     {filteredNotes.length === 0 && <div className="px-3 text-sm md:text-sm text-slate-500 dark:text-slate-500">No results found</div>}
                     {filteredNotes.map(note => (
@@ -583,10 +594,10 @@ const Sidebar: React.FC<SidebarProps> = ({
                             key={note.id}
                             note={note}
                             activeNoteId={activeNoteId}
-                            onSelect={(id) => onSelectNote(id, search)}
+                            onSelect={(id) => onSelectNote(id, cleanSearch)}
                             onToggleBookmark={onToggleBookmark}
                             onDelete={onDeleteNote}
-                            searchSnippet={getSearchSnippet(note.content, search)}
+                            searchSnippet={getSearchSnippet(note.content, cleanSearch)}
                         />
                     ))}
                 </div>

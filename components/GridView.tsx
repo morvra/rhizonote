@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Note, SortField, SortDirection } from '../types';
-import { Search, X, Clock, Calendar, ArrowDownAz, ArrowUp, ArrowDown } from 'lucide-react';
+import { Search, X, Clock, Calendar, ArrowDownAz, ArrowUp, ArrowDown, Globe } from 'lucide-react';
 
 interface GridViewProps {
   notes: Note[];
@@ -31,11 +31,17 @@ const GridView: React.FC<GridViewProps> = ({ notes, onSelectNote }) => {
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<SortField>('updated');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [showPublishedOnly, setShowPublishedOnly] = useState(false);
 
   const filteredNotes = useMemo(() => {
     // Active notes only
     let activeNotes = notes.filter(n => !n.deletedAt);
     
+    // Filter by Published status
+    if (showPublishedOnly) {
+        activeNotes = activeNotes.filter(n => n.isPublished);
+    }
+
     // Filter
     if (search) {
         const lowerQuery = search.toLowerCase();
@@ -58,7 +64,7 @@ const GridView: React.FC<GridViewProps> = ({ notes, onSelectNote }) => {
         
         return sortDirection === 'asc' ? result : -result;
     });
-  }, [notes, search, sortField, sortDirection]);
+  }, [notes, search, sortField, sortDirection, showPublishedOnly]);
 
   const SortButton = ({ field, icon: Icon, label }: { field: SortField, icon: any, label: string }) => (
       <button
@@ -118,6 +124,20 @@ const GridView: React.FC<GridViewProps> = ({ notes, onSelectNote }) => {
                             </button>
                         )}
                     </div>
+
+                    {/* Published Filter Toggle */}
+                    <button
+                        onClick={() => setShowPublishedOnly(!showPublishedOnly)}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors border ${
+                            showPublishedOnly
+                                ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+                                : 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-800 text-slate-500 hover:bg-gray-50 dark:hover:bg-slate-800 dark:text-slate-400'
+                        }`}
+                        title={showPublishedOnly ? "Show All Notes" : "Show Published Only"}
+                    >
+                        <Globe size={14} />
+                        <span className="hidden sm:inline">Published</span>
+                    </button>
 
                     {/* Sort Controls */}
                     <div className="flex items-center gap-1 bg-gray-50 dark:bg-slate-950 p-1 rounded-lg border border-gray-200 dark:border-slate-800 shrink-0">
