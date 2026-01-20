@@ -539,7 +539,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 <Search size={16} className="absolute left-3 top-3 md:top-2.5 text-slate-500 dark:text-slate-500 md:w-[14px] md:h-[14px]" />
                 <input
                     type="text"
-                    placeholder="Search... (try is:published)"
+                    placeholder="Search..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     className="w-full bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 text-base md:text-sm rounded pl-10 md:pl-9 pr-10 md:pr-9 py-2 border border-gray-300 dark:border-slate-800 focus:border-indigo-500 focus:outline-none placeholder-slate-400 dark:placeholder-slate-600"
